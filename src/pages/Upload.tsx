@@ -94,6 +94,7 @@ const Upload = () => {
           state: { 
             rowCount: data.rowCount, 
             columnNames: data.columnNames,
+            metrics: data.metrics,
             platform,
             dataLevel 
           } 

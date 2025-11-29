@@ -6,17 +6,58 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 
+interface Metrics {
+  totalSpend: number | null;
+  totalImpressions: number | null;
+  totalClicks: number | null;
+  totalResults: number | null;
+  ctr: number | null;
+  cpc: number | null;
+  cpa: number | null;
+  roas: number | null;
+}
+
 interface LocationState {
   rowCount?: number;
   columnNames?: string[];
   platform?: string;
   dataLevel?: string;
+  metrics?: Metrics;
 }
+
+// Formatting helpers
+const formatCurrency = (value: number | null): string => {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+};
+
+const formatNumber = (value: number | null): string => {
+  if (value === null) return "—";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return value.toLocaleString();
+};
+
+const formatPercent = (value: number | null): string => {
+  if (value === null) return "—";
+  return `${value.toFixed(2)}%`;
+};
+
+const formatRoas = (value: number | null): string => {
+  if (value === null) return "—";
+  return `${value.toFixed(2)}x`;
+};
 
 const Analysis = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state as LocationState | null;
+  const metrics = state?.metrics;
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -48,7 +89,9 @@ const Analysis = () => {
           <h1 className="text-3xl font-display font-bold text-foreground mb-2">
             Performance Analysis
           </h1>
-          <p className="text-muted-foreground">Meta Ads • Campaign Level • Last 30 days</p>
+          <p className="text-muted-foreground">
+            {state?.platform || "Meta Ads"} • {state?.dataLevel || "Campaign Level"} • Last 30 days
+          </p>
         </div>
 
         {/* CSV Summary Card */}
@@ -89,54 +132,43 @@ const Analysis = () => {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <Card className="p-4">
                 <p className="text-sm text-muted-foreground mb-1">Total Spend</p>
-                <p className="text-2xl font-display font-bold text-foreground">$12,450</p>
-                <p className="text-xs text-accent flex items-center gap-1 mt-1">
-                  <TrendingUp className="h-3 w-3" />
-                  +15% vs prev
+                <p className="text-2xl font-display font-bold text-foreground">
+                  {formatCurrency(metrics?.totalSpend ?? null)}
                 </p>
               </Card>
 
               <Card className="p-4">
                 <p className="text-sm text-muted-foreground mb-1">CPA</p>
-                <p className="text-2xl font-display font-bold text-foreground">$24.30</p>
-                <p className="text-xs text-accent flex items-center gap-1 mt-1">
-                  <TrendingDown className="h-3 w-3" />
-                  -8% vs prev
+                <p className="text-2xl font-display font-bold text-foreground">
+                  {formatCurrency(metrics?.cpa ?? null)}
                 </p>
               </Card>
 
               <Card className="p-4">
                 <p className="text-sm text-muted-foreground mb-1">ROAS</p>
-                <p className="text-2xl font-display font-bold text-foreground">3.2x</p>
-                <p className="text-xs text-accent flex items-center gap-1 mt-1">
-                  <TrendingUp className="h-3 w-3" />
-                  +12% vs prev
+                <p className="text-2xl font-display font-bold text-foreground">
+                  {formatRoas(metrics?.roas ?? null)}
                 </p>
               </Card>
 
               <Card className="p-4">
                 <p className="text-sm text-muted-foreground mb-1">CTR</p>
-                <p className="text-2xl font-display font-bold text-foreground">2.4%</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Avg performance
+                <p className="text-2xl font-display font-bold text-foreground">
+                  {formatPercent(metrics?.ctr ?? null)}
                 </p>
               </Card>
 
               <Card className="p-4">
                 <p className="text-sm text-muted-foreground mb-1">Impressions</p>
-                <p className="text-2xl font-display font-bold text-foreground">1.2M</p>
-                <p className="text-xs text-accent flex items-center gap-1 mt-1">
-                  <TrendingUp className="h-3 w-3" />
-                  +22% vs prev
+                <p className="text-2xl font-display font-bold text-foreground">
+                  {formatNumber(metrics?.totalImpressions ?? null)}
                 </p>
               </Card>
 
               <Card className="p-4">
                 <p className="text-sm text-muted-foreground mb-1">Clicks</p>
-                <p className="text-2xl font-display font-bold text-foreground">28,800</p>
-                <p className="text-xs text-accent flex items-center gap-1 mt-1">
-                  <TrendingUp className="h-3 w-3" />
-                  +18% vs prev
+                <p className="text-2xl font-display font-bold text-foreground">
+                  {formatNumber(metrics?.totalClicks ?? null)}
                 </p>
               </Card>
             </div>
