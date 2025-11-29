@@ -1,1 +1,10 @@
 project_id = "obqptpbwoxwwqcytlkhf"
+
+[functions.test-claude]
+verify_jwt = false
+
+[functions.adpilot-brain]
+verify_jwt = false
+
+[functions.analyze-csv]
+verify_jwt = false
