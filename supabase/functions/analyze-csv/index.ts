@@ -175,36 +175,178 @@ serve(async (req) => {
     console.log(`Using ${dataRows.length} data rows for aggregation (filtered by name column)`);
 
     // --- 2) Aggregate metrics using ONLY dataRows (no summary rows) ---
+    
+    // Helper to sum a column
+    function sumColumn(col: string | null, rows: any[]): number {
+      if (!col) return 0;
+      return rows.reduce((acc, row) => acc + toNumber(row[col]), 0);
+    }
+
+    // Basic metrics (already computed)
     let totalSpend = 0;
     let totalImpressions = 0;
     let totalClicks = 0;
-    let totalResults = 0;
-    let totalRevenue = 0;
 
     for (const row of dataRows) {
       if (spendCol) totalSpend += toNumber(row[spendCol]);
       if (impressionsCol) totalImpressions += toNumber(row[impressionsCol]);
       if (clicksCol) totalClicks += toNumber(row[clicksCol]);
-      if (purchasesCol) totalResults += toNumber(row[purchasesCol]);
-      if (revenueCol) totalRevenue += toNumber(row[revenueCol]);
     }
 
-    const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
-    const cpc = totalClicks > 0 ? totalSpend / totalClicks : null;
-    const cpa = totalResults > 0 ? totalSpend / totalResults : null;
-    const roas = totalSpend > 0 ? totalRevenue / totalSpend : null;
+    // Leads-related columns
+    const leadsCol        = getCol("Leads");
+    const websiteLeadsCol = getCol("Website leads");
+    const offlineLeadsCol = getCol("Offline leads");
+    const metaLeadsCol    = getCol("Meta leads");
 
-    // Compute derived metrics
-    const metrics = {
-      totalSpend: spendCol ? round(totalSpend, 2) : null,
-      totalImpressions: impressionsCol ? totalImpressions : null,
-      totalClicks: clicksCol ? totalClicks : null,
-      totalResults: purchasesCol ? totalResults : null,
-      totalRevenue: revenueCol ? round(totalRevenue, 2) : null,
+    const totalLeads =
+      sumColumn(leadsCol, dataRows) +
+      sumColumn(websiteLeadsCol, dataRows) +
+      sumColumn(offlineLeadsCol, dataRows) +
+      sumColumn(metaLeadsCol, dataRows);
+
+    // Purchases-related columns (purchasesCol already declared above)
+    const inAppPurchCol     = getCol("In-app purchases");
+    const websitePurchCol   = getCol("Website purchases");
+    const offlinePurchCol   = getCol("Offline purchases");
+    const metaPurchCol      = getCol("Meta purchases");
+
+    const totalPurchases =
+      sumColumn(purchasesCol, dataRows) +
+      sumColumn(inAppPurchCol, dataRows) +
+      sumColumn(websitePurchCol, dataRows) +
+      sumColumn(offlinePurchCol, dataRows) +
+      sumColumn(metaPurchCol, dataRows);
+
+    // Revenue columns (revenueCol = "Purchases conversion value" already declared)
+    const inAppPurchConvCol    = getCol("In-app purchases conversion value");
+    const websitePurchConvCol  = getCol("Website purchases conversion value");
+    const offlinePurchConvCol  = getCol("Offline purchases conversion value");
+    const metaPurchConvCol     = getCol("Meta purchase conversion value");
+
+    const totalRevenue =
+      sumColumn(revenueCol, dataRows) +
+      sumColumn(inAppPurchConvCol, dataRows) +
+      sumColumn(websitePurchConvCol, dataRows) +
+      sumColumn(offlinePurchConvCol, dataRows) +
+      sumColumn(metaPurchConvCol, dataRows);
+
+    const hasRevenue = totalRevenue > 0;
+
+    // --- Detect campaign goal ---
+    type Goal = "purchases" | "leads" | "traffic" | "awareness";
+    let goal: Goal;
+
+    // Try objective column first, if present
+    const objectiveCol = getCol("Objective");
+    let objectiveValue = "";
+    if (objectiveCol && dataRows.length > 0) {
+      objectiveValue = String(dataRows[0][objectiveCol] ?? "").toLowerCase();
+    }
+
+    function inferGoalFromObjective(obj: string): Goal | null {
+      if (!obj) return null;
+      if (obj.includes("lead")) return "leads";
+      if (obj.includes("conversion") || obj.includes("purchase") || obj.includes("sale")) return "purchases";
+      if (obj.includes("traffic") || obj.includes("click")) return "traffic";
+      if (obj.includes("reach") || obj.includes("awareness")) return "awareness";
+      return null;
+    }
+
+    const fromObj = inferGoalFromObjective(objectiveValue);
+
+    if (fromObj) {
+      goal = fromObj;
+    } else {
+      // Fallback: infer from events
+      if (totalPurchases > 0) {
+        goal = "purchases";
+      } else if (totalLeads > 0) {
+        goal = "leads";
+      } else if (totalClicks > 0) {
+        goal = "traffic";
+      } else {
+        goal = "awareness";
+      }
+    }
+
+    // --- Compute KPI values ---
+    const ctr  = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
+    const cpc  = totalClicks      > 0 ? totalSpend / totalClicks       : null;
+    const cpp  = totalPurchases   > 0 ? totalSpend / totalPurchases    : null;
+    const cpl  = totalLeads       > 0 ? totalSpend / totalLeads        : null;
+    const cpm  = totalImpressions > 0 ? (totalSpend / totalImpressions) * 1000 : null;
+    const roas = totalSpend       > 0 && hasRevenue ? totalRevenue / totalSpend : null;
+
+    let primaryKpiKey: string | null = null;
+    let primaryKpiLabel = "";
+    let primaryKpiValue: number | null = null;
+    let resultsLabel = "";
+    let resultsValue: number | null = null;
+
+    switch (goal) {
+      case "purchases":
+        if (roas !== null) {
+          primaryKpiKey = "roas";
+          primaryKpiLabel = "ROAS (return on ad spend)";
+          primaryKpiValue = roas;
+        } else {
+          primaryKpiKey = "cpp";
+          primaryKpiLabel = "Cost per purchase";
+          primaryKpiValue = cpp;
+        }
+        resultsLabel = "Total purchases";
+        resultsValue = totalPurchases || null;
+        break;
+
+      case "leads":
+        primaryKpiKey = "cpl";
+        primaryKpiLabel = "Cost per lead";
+        primaryKpiValue = cpl;
+        resultsLabel = "Total leads";
+        resultsValue = totalLeads || null;
+        break;
+
+      case "traffic":
+        primaryKpiKey = "cpc";
+        primaryKpiLabel = "Cost per click";
+        primaryKpiValue = cpc;
+        resultsLabel = "Total clicks";
+        resultsValue = totalClicks || null;
+        break;
+
+      case "awareness":
+      default:
+        primaryKpiKey = "cpm";
+        primaryKpiLabel = "CPM (cost per 1,000 impressions)";
+        primaryKpiValue = cpm;
+        resultsLabel = "Impressions";
+        resultsValue = totalImpressions || null;
+        break;
+    }
+
+    // --- Build comprehensive metrics object ---
+    const metrics: any = {
+      totalSpend: round(totalSpend, 2),
+      totalImpressions: totalImpressions,
+      totalClicks: totalClicks,
+      totalPurchases: totalPurchases,
+      totalLeads: totalLeads,
+      totalRevenue: round(totalRevenue, 2),
+      
       ctr: ctr ? round(ctr, 2) : null,
       cpc: cpc ? round(cpc, 2) : null,
-      cpa: cpa ? round(cpa, 2) : null,
+      cpp: cpp ? round(cpp, 2) : null,
+      cpl: cpl ? round(cpl, 2) : null,
+      cpm: cpm ? round(cpm, 2) : null,
       roas: roas ? round(roas, 2) : null,
+      
+      goal: goal,
+      primaryKpiKey: primaryKpiKey,
+      primaryKpiLabel: primaryKpiLabel,
+      primaryKpiValue: primaryKpiValue ? round(primaryKpiValue, 2) : null,
+      resultsLabel: resultsLabel,
+      resultsValue: resultsValue,
     };
 
     console.log('Computed metrics:', metrics);
