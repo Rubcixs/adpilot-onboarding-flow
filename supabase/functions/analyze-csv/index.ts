@@ -330,12 +330,25 @@ ${JSON.stringify(analysisSummary)}`;
           
           if (textContent) {
             try {
-              // Parse the JSON response from Claude
-              aiInsights = JSON.parse(textContent);
-              console.log('AI insights parsed successfully');
+              // Clean the response: trim, remove markdown code fences
+              let raw = textContent.trim();
+              raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+              
+              // Extract JSON between first { and last }
+              const firstBrace = raw.indexOf('{');
+              const lastBrace = raw.lastIndexOf('}');
+              
+              if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+                const cleaned = raw.substring(firstBrace, lastBrace + 1);
+                aiInsights = JSON.parse(cleaned);
+                console.log('AI insights parsed successfully');
+              } else {
+                throw new Error('No valid JSON object found in response');
+              }
             } catch (parseError: any) {
-              aiInsightsError = `JSON parse error: ${parseError?.message || 'Invalid JSON from Claude'}`;
-              console.error('Claude insights error:', aiInsightsError);
+              aiInsights = null;
+              aiInsightsError = 'Failed to parse Claude JSON';
+              console.error('Claude insights error:', aiInsightsError, parseError?.message);
               console.log('Raw Claude response:', textContent);
             }
           } else {
