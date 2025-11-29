@@ -217,9 +217,17 @@ const Analysis = () => {
               </Card>
 
               <Card className="p-4">
-                <p className="text-sm text-muted-foreground mb-1">ROAS</p>
+                <p className="text-sm text-muted-foreground mb-1">
+                  {metrics?.roas !== null && metrics?.roas !== undefined
+                    ? "ROAS"
+                    : metrics?.resultsLabel || "Results"}
+                </p>
                 <p className="text-2xl font-display font-bold text-foreground">
-                  {formatRoas(metrics?.roas ?? null)}
+                  {metrics?.roas !== null && metrics?.roas !== undefined
+                    ? formatRoas(metrics.roas)
+                    : metrics?.resultsValue !== null && metrics?.resultsValue !== undefined
+                    ? formatNumber(metrics.resultsValue)
+                    : "—"}
                 </p>
               </Card>
 
