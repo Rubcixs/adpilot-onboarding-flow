@@ -20,6 +20,14 @@ Guidelines:
 You MUST respond with ONLY valid JSON in this exact format:
 {
   "insights": {
+    "quickVerdict": "A 1-2 sentence high-level summary of account health.",
+    "quickVerdictTone": "positive" | "negative" | "mixed",
+    "bestPerformers": [
+      { "id": "Exact Campaign Name from data", "reason": "Why it is a winner (e.g. ROAS 4.5)" }
+    ],
+    "needsAttention": [
+      { "id": "Exact Campaign Name from data", "reason": "Why it needs help (e.g. High CPA)" }
+    ],
     "whatsWorking": [
       { "title": "Brief title", "detail": "Specific observation with data reference" }
     ],
@@ -29,7 +37,10 @@ You MUST respond with ONLY valid JSON in this exact format:
   }
 }
 
-Each array should have 3-5 items maximum. Be specific to the data provided.`;
+Limits:
+- bestPerformers: Max 3 items
+- needsAttention: Max 3 items
+- whatsWorking/whatsNotWorking: Max 3-5 items`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
