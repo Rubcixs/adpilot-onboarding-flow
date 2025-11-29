@@ -3,7 +3,8 @@ import { ChevronLeft, Download, Target, Users, Lightbulb, CheckCircle2, DollarSi
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useMemo } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useMemo, useState } from "react";
 
 interface UserInput {
   businessName?: string;
@@ -30,6 +31,7 @@ const Results = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state as LocationState | null;
+  const [checkedItems, setCheckedItems] = useState<string[]>([]);
   
   // Try multiple possible locations for userInput
   const plan = state?.plan;
@@ -182,7 +184,7 @@ const Results = () => {
                 AdPilot
               </span>
             </div>
-            <Button variant="outline" className="gap-2">
+            <Button variant="outline" className="gap-2" onClick={() => window.print()}>
               <Download className="h-4 w-4" />
               Download PDF
             </Button>
@@ -271,23 +273,31 @@ const Results = () => {
             Recommended Budget Allocation{formatBudget(userInput.monthlyBudget) ? ` (${formatBudget(userInput.monthlyBudget)})` : ""}
           </h2>
           <div className="space-y-3">
-            {displayBudgetAllocation.map((item: any, i: number) => (
-              <div key={i} className="p-4 rounded-lg bg-muted/50 border border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <p className="font-medium text-foreground">{item.platform || item.name || item.channel}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{item.reason || item.description || ""}</p>
+            {displayBudgetAllocation.map((item: any, i: number) => {
+              const percentage = item.percentage || 50;
+              const budget = typeof userInput.monthlyBudget === 'number' 
+                ? Math.round((percentage / 100) * userInput.monthlyBudget) 
+                : null;
+              return (
+                <div key={i} className="p-4 rounded-lg bg-muted/50 border border-border">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="font-medium text-foreground">{item.platform || item.name || item.channel}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{item.reason || item.description || ""}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-semibold text-foreground">
+                        {budget !== null ? formatCurrency(budget) : `${percentage}%`}
+                      </p>
+                      <Badge variant="outline">{percentage}%</Badge>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-lg font-semibold text-foreground">{item.budget || `${item.percentage}%`}</p>
-                    <Badge variant="outline">{item.percentage || 50}%</Badge>
+                  <div className="h-2 bg-border rounded-full overflow-hidden">
+                    <div className="h-full bg-primary" style={{ width: `${percentage}%` }} />
                   </div>
                 </div>
-                <div className="h-2 bg-border rounded-full overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: `${item.percentage || 50}%` }} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
 
@@ -408,31 +418,43 @@ const Results = () => {
             Setup Checklist
           </h2>
           <div className="space-y-2">
-            {normalizedChecklist.length > 0 ? (
-              normalizedChecklist.map((item: string, i: number) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
-                  <div className="h-5 w-5 rounded border-2 border-border flex-shrink-0" />
-                  <span className="text-sm text-foreground">{item}</span>
+            {(normalizedChecklist.length > 0 ? normalizedChecklist : [
+              "Create your ad account (Meta Business Manager)",
+              "Install tracking pixel on your website",
+              "Set up conversion tracking",
+              "Prepare 3-5 ad creative variations",
+              "Write compelling ad copy",
+              "Set up your target audiences",
+              "Launch with a small test budget first",
+            ]).map((item: string, i: number) => {
+              const itemId = `checklist-${i}`;
+              const isChecked = checkedItems.includes(itemId);
+              const toggleItem = () => {
+                setCheckedItems(prev => 
+                  isChecked ? prev.filter(id => id !== itemId) : [...prev, itemId]
+                );
+              };
+              return (
+                <div 
+                  key={i} 
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={toggleItem}
+                >
+                  <Checkbox 
+                    id={itemId}
+                    checked={isChecked}
+                    onCheckedChange={toggleItem}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <label 
+                    htmlFor={itemId}
+                    className={`text-sm cursor-pointer ${isChecked ? 'text-muted-foreground line-through' : 'text-foreground'}`}
+                  >
+                    {item}
+                  </label>
                 </div>
-              ))
-            ) : (
-              <>
-                {[
-                  "Create your ad account (Meta Business Manager)",
-                  "Install tracking pixel on your website",
-                  "Set up conversion tracking",
-                  "Prepare 3-5 ad creative variations",
-                  "Write compelling ad copy",
-                  "Set up your target audiences",
-                  "Launch with a small test budget first",
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className="h-5 w-5 rounded border-2 border-border flex-shrink-0" />
-                    <span className="text-sm text-foreground">{item}</span>
-                  </div>
-                ))}
-              </>
-            )}
+              );
+            })}
           </div>
         </Card>
 
