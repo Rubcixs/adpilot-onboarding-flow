@@ -1,11 +1,100 @@
-import { useNavigate } from "react-router-dom";
-import { ChevronLeft, Download, Target, Users, Lightbulb, CheckCircle2, DollarSign, TrendingUp } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { ChevronLeft, Download, Target, Users, Lightbulb, CheckCircle2, DollarSign, TrendingUp, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
+interface UserInput {
+  businessName?: string;
+  businessType?: string;
+  country?: string;
+  goal?: string;
+  priority?: string;
+  customer?: string;
+  customCustomer?: string;
+  offer?: string;
+  customOffer?: string;
+  productPrice?: number;
+  monthlyBudget?: number | string;
+  expectedResults?: number | string;
+  experience?: string;
+}
+
+interface BudgetAllocation {
+  platform: string;
+  budget: string;
+  percentage: number;
+  reason: string;
+}
+
+interface Campaign {
+  name: string;
+  budget: string;
+  description: string;
+  adSets?: { name: string; description: string }[];
+}
+
+interface Audience {
+  label: string;
+  value: string;
+}
+
+interface CreativeAngle {
+  angle: string;
+  description: string;
+}
+
+interface Plan {
+  forecasts?: {
+    sales?: string;
+    cpa?: string;
+    roas?: string;
+  };
+  budgetAllocation?: BudgetAllocation[];
+  campaigns?: Campaign[];
+  audiences?: Audience[];
+  creativeAngles?: CreativeAngle[];
+  checklist?: string[];
+  summary?: string;
+}
+
+interface LocationState {
+  plan?: Plan;
+  userInput?: UserInput;
+}
+
 const Results = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const state = location.state as LocationState | null;
+  
+  const { plan, userInput } = state || {};
+
+  // Handle missing data
+  if (!plan || !userInput) {
+    return (
+      <div className="min-h-screen bg-gradient-hero flex items-center justify-center">
+        <Card className="p-8 text-center max-w-md">
+          <Loader2 className="h-12 w-12 text-primary mx-auto mb-4 animate-spin" />
+          <h2 className="text-xl font-display font-semibold text-foreground mb-2">
+            No Plan Data Found
+          </h2>
+          <p className="text-muted-foreground mb-6">
+            It looks like you haven't completed the wizard yet. Please start from the beginning to generate your media plan.
+          </p>
+          <Button onClick={() => navigate("/wizard/step1")}>
+            Start Wizard
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const formatBudget = (budget: number | string | undefined) => {
+    if (budget === undefined || budget === "not-sure") return "Not specified";
+    if (typeof budget === "number") return `$${budget.toLocaleString()}/month`;
+    return budget;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -41,8 +130,7 @@ const Results = () => {
             Your Media Plan is Ready!
           </h1>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Here's a customized advertising plan based on your business, goals, and budget. 
-            This is your starting point - you can always adjust as you learn what works.
+            {plan?.summary || "Here's a customized advertising plan based on your business, goals, and budget. This is your starting point - you can always adjust as you learn what works."}
           </p>
         </div>
 
@@ -55,15 +143,18 @@ const Results = () => {
           <div className="grid md:grid-cols-3 gap-4">
             <div>
               <p className="text-sm text-muted-foreground mb-1">Business Type</p>
-              <p className="font-medium text-foreground">E-commerce (Organic Skincare)</p>
+              <p className="font-medium text-foreground">
+                {userInput.businessType || "Not specified"}
+                {userInput.businessName && ` (${userInput.businessName})`}
+              </p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground mb-1">Main Goal</p>
-              <p className="font-medium text-foreground">More Sales</p>
+              <p className="font-medium text-foreground">{userInput.goal || "Not specified"}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground mb-1">Target Market</p>
-              <p className="font-medium text-foreground">United States</p>
+              <p className="font-medium text-foreground">{userInput.country || "Not specified"}</p>
             </div>
           </div>
         </Card>
@@ -76,20 +167,26 @@ const Results = () => {
           </h2>
           <div className="grid md:grid-cols-3 gap-6">
             <div className="text-center">
-              <p className="text-3xl font-display font-bold text-accent-foreground mb-1">35-65</p>
+              <p className="text-3xl font-display font-bold text-accent-foreground mb-1">
+                {plan?.forecasts?.sales || "Calculating..."}
+              </p>
               <p className="text-sm text-accent-foreground/80">Sales per month</p>
             </div>
             <div className="text-center">
-              <p className="text-3xl font-display font-bold text-accent-foreground mb-1">$25-40</p>
+              <p className="text-3xl font-display font-bold text-accent-foreground mb-1">
+                {plan?.forecasts?.cpa || "Calculating..."}
+              </p>
               <p className="text-sm text-accent-foreground/80">Cost per sale (CPA)</p>
             </div>
             <div className="text-center">
-              <p className="text-3xl font-display font-bold text-accent-foreground mb-1">2.5-4x</p>
+              <p className="text-3xl font-display font-bold text-accent-foreground mb-1">
+                {plan?.forecasts?.roas || "Calculating..."}
+              </p>
               <p className="text-sm text-accent-foreground/80">Return on ad spend</p>
             </div>
           </div>
           <p className="text-xs text-accent-foreground/70 text-center mt-4">
-            * Estimates based on industry benchmarks for organic skincare e-commerce
+            * Estimates based on industry benchmarks for {userInput.businessType || "your industry"}
           </p>
         </Card>
 
@@ -97,78 +194,68 @@ const Results = () => {
         <Card className="p-6 mb-6">
           <h2 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
             <DollarSign className="h-5 w-5 text-primary" />
-            Recommended Budget Allocation ($2,000/month)
+            Recommended Budget Allocation ({formatBudget(userInput.monthlyBudget)})
           </h2>
           <div className="space-y-3">
-            {[
-              { platform: "Meta Ads (Facebook/Instagram)", budget: "$1,200", percentage: 60, reason: "Best for e-commerce visual products" },
-              { platform: "Google Shopping Ads", budget: "$600", percentage: 30, reason: "High-intent product searches" },
-              { platform: "TikTok Ads", budget: "$200", percentage: 10, reason: "Test platform for younger audience" },
-            ].map((item, i) => (
-              <div key={i} className="p-4 rounded-lg bg-muted/50 border border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <p className="font-medium text-foreground">{item.platform}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{item.reason}</p>
+            {(plan?.budgetAllocation && plan.budgetAllocation.length > 0) ? (
+              plan.budgetAllocation.map((item, i) => (
+                <div key={i} className="p-4 rounded-lg bg-muted/50 border border-border">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="font-medium text-foreground">{item.platform}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{item.reason}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-semibold text-foreground">{item.budget}</p>
+                      <Badge variant="outline">{item.percentage}%</Badge>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-lg font-semibold text-foreground">{item.budget}</p>
-                    <Badge variant="outline">{item.percentage}%</Badge>
+                  <div className="h-2 bg-border rounded-full overflow-hidden">
+                    <div className="h-full bg-primary" style={{ width: `${item.percentage}%` }} />
                   </div>
                 </div>
-                <div className="h-2 bg-border rounded-full overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: `${item.percentage}%` }} />
-                </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-muted-foreground text-center py-4">
+                Budget allocation will be calculated based on your goals.
+              </p>
+            )}
           </div>
         </Card>
 
         {/* Campaign Structure */}
         <Card className="p-6 mb-6">
           <h2 className="font-display font-semibold text-foreground mb-4">
-            Campaign Structure (Meta Ads Example)
+            Campaign Structure
           </h2>
           <div className="space-y-4">
-            <div className="p-4 rounded-lg border border-border">
-              <div className="flex items-center justify-between mb-2">
-                <p className="font-medium text-foreground">Campaign 1: Prospecting</p>
-                <Badge>$720/month (60%)</Badge>
-              </div>
-              <p className="text-sm text-muted-foreground mb-3">
-                Find new customers interested in organic skincare
+            {(plan?.campaigns && plan.campaigns.length > 0) ? (
+              plan.campaigns.map((campaign, i) => (
+                <div key={i} className="p-4 rounded-lg border border-border">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-medium text-foreground">{campaign.name}</p>
+                    {campaign.budget && <Badge>{campaign.budget}</Badge>}
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-3">
+                    {campaign.description}
+                  </p>
+                  {campaign.adSets && campaign.adSets.length > 0 && (
+                    <div className="pl-4 space-y-2 border-l-2 border-primary/30">
+                      {campaign.adSets.map((adSet, j) => (
+                        <div key={j} className="text-sm">
+                          <p className="font-medium text-foreground">{adSet.name}</p>
+                          <p className="text-xs text-muted-foreground">{adSet.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-muted-foreground text-center py-4">
+                Campaign structure recommendations coming soon.
               </p>
-              <div className="pl-4 space-y-2 border-l-2 border-primary/30">
-                <div className="text-sm">
-                  <p className="font-medium text-foreground">Ad Set: Lookalike Audiences</p>
-                  <p className="text-xs text-muted-foreground">Based on website visitors & existing customers</p>
-                </div>
-                <div className="text-sm">
-                  <p className="font-medium text-foreground">Ad Set: Interest Targeting</p>
-                  <p className="text-xs text-muted-foreground">Skincare, organic beauty, wellness interests</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-lg border border-border">
-              <div className="flex items-center justify-between mb-2">
-                <p className="font-medium text-foreground">Campaign 2: Retargeting</p>
-                <Badge>$480/month (40%)</Badge>
-              </div>
-              <p className="text-sm text-muted-foreground mb-3">
-                Re-engage people who visited your site
-              </p>
-              <div className="pl-4 space-y-2 border-l-2 border-accent/30">
-                <div className="text-sm">
-                  <p className="font-medium text-foreground">Ad Set: Cart Abandoners</p>
-                  <p className="text-xs text-muted-foreground">Dynamic product ads with 10% discount offer</p>
-                </div>
-                <div className="text-sm">
-                  <p className="font-medium text-foreground">Ad Set: Product Viewers</p>
-                  <p className="text-xs text-muted-foreground">Remind them about products they viewed</p>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </Card>
 
@@ -179,19 +266,18 @@ const Results = () => {
             Target Audiences
           </h2>
           <div className="grid md:grid-cols-2 gap-4">
-            {[
-              { label: "Age Range", value: "25-45 years old" },
-              { label: "Gender", value: "All genders (slight female skew expected)" },
-              { label: "Interests", value: "Organic products, skincare, wellness, sustainability" },
-              { label: "Behaviors", value: "Online shoppers, engaged beauty buyers" },
-              { label: "Income", value: "Middle to upper-middle class" },
-              { label: "Device", value: "Mobile-first (70% mobile, 30% desktop)" },
-            ].map((item, i) => (
-              <div key={i} className="p-3 rounded-lg bg-muted/50">
-                <p className="text-xs text-muted-foreground mb-1">{item.label}</p>
-                <p className="font-medium text-foreground">{item.value}</p>
-              </div>
-            ))}
+            {(plan?.audiences && plan.audiences.length > 0) ? (
+              plan.audiences.map((item, i) => (
+                <div key={i} className="p-3 rounded-lg bg-muted/50">
+                  <p className="text-xs text-muted-foreground mb-1">{item.label}</p>
+                  <p className="font-medium text-foreground">{item.value}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-muted-foreground col-span-2 text-center py-4">
+                Audience targeting will be based on your customer profile.
+              </p>
+            )}
           </div>
         </Card>
 
@@ -202,33 +288,18 @@ const Results = () => {
             Creative Angles & Concepts
           </h2>
           <div className="space-y-3">
-            {[
-              {
-                angle: "Before/After Results",
-                description: "Show real customer transformations with your products. Video testimonials work great here.",
-              },
-              {
-                angle: "Ingredient Education",
-                description: "Highlight the natural, organic ingredients and their benefits. Appeal to conscious consumers.",
-              },
-              {
-                angle: "Problem/Solution",
-                description: "Address common skin concerns (dry skin, aging, etc.) and position your products as the solution.",
-              },
-              {
-                angle: "Lifestyle & Values",
-                description: "Showcase the lifestyle and values your brand represents - sustainability, self-care, natural beauty.",
-              },
-              {
-                angle: "Limited Offers",
-                description: "Use urgency with limited-time bundles, seasonal offers, or first-purchase discounts.",
-              },
-            ].map((item, i) => (
-              <div key={i} className="p-4 rounded-lg bg-muted/50 border border-border">
-                <p className="font-medium text-foreground mb-1">{item.angle}</p>
-                <p className="text-sm text-muted-foreground">{item.description}</p>
-              </div>
-            ))}
+            {(plan?.creativeAngles && plan.creativeAngles.length > 0) ? (
+              plan.creativeAngles.map((item, i) => (
+                <div key={i} className="p-4 rounded-lg bg-muted/50 border border-border">
+                  <p className="font-medium text-foreground mb-1">{item.angle}</p>
+                  <p className="text-sm text-muted-foreground">{item.description}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-muted-foreground text-center py-4">
+                Creative suggestions will be tailored to your business.
+              </p>
+            )}
           </div>
         </Card>
 
@@ -238,22 +309,18 @@ const Results = () => {
             Setup Checklist
           </h2>
           <div className="space-y-2">
-            {[
-              "Install Meta Pixel on your website",
-              "Set up conversion tracking for purchases",
-              "Create business accounts on Meta & Google",
-              "Prepare 5-10 ad creatives (images/videos)",
-              "Write 3-5 ad copy variations",
-              "Set up retargeting audiences",
-              "Create lookalike audiences from existing data",
-              "Set daily budgets and campaign limits",
-              "Plan your first week of testing",
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
-                <div className="h-5 w-5 rounded border-2 border-border flex-shrink-0" />
-                <span className="text-sm text-foreground">{item}</span>
-              </div>
-            ))}
+            {(plan?.checklist && plan.checklist.length > 0) ? (
+              plan.checklist.map((item, i) => (
+                <div key={i} className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="h-5 w-5 rounded border-2 border-border flex-shrink-0" />
+                  <span className="text-sm text-foreground">{item}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-muted-foreground text-center py-4">
+                Setup checklist will be generated based on your plan.
+              </p>
+            )}
           </div>
         </Card>
 
