@@ -59,11 +59,11 @@ serve(async (req) => {
 
     console.log('Normalized headers:', Object.keys(headerMap).join(', '));
 
-    // Resolve columns using normalized headers
+    // Resolve columns using normalized headers - comprehensive alias lists for Meta CSV variants
     const spendCol = 
+      headerMap['amountspenteur'] ??
       headerMap['amountspent'] ??
       headerMap['amountspentall'] ??
-      headerMap['amountspenteur'] ??
       headerMap['amountspentusd'] ??
       headerMap['spend'] ??
       null;
@@ -71,8 +71,8 @@ serve(async (req) => {
     const impressionsCol = headerMap['impressions'] ?? null;
 
     const clicksCol =
-      headerMap['clicksall'] ??
       headerMap['linkclicksall'] ??
+      headerMap['clicksall'] ??
       headerMap['linkclicks'] ??
       headerMap['clicks'] ??
       null;
@@ -84,6 +84,7 @@ serve(async (req) => {
       headerMap['leads'] ??
       headerMap['websitepurchases'] ??
       headerMap['metapurchases'] ??
+      headerMap['onfacebookleads'] ??
       null;
 
     const revenueCol =
@@ -127,6 +128,7 @@ serve(async (req) => {
       totalImpressions: hasImpressions ? totalImpressions : null,
       totalClicks: hasClicks ? totalClicks : null,
       totalResults: hasResults ? totalResults : null,
+      totalRevenue: hasRevenue ? round(totalRevenue, 2) : null,
       ctr: (hasClicks && hasImpressions && totalImpressions > 0) 
         ? round((totalClicks / totalImpressions) * 100, 2) 
         : null,
@@ -161,16 +163,32 @@ serve(async (req) => {
 function normalizeHeader(name: string): string {
   return name
     .toLowerCase()
-    .replace(/[\s\(\)\[\]€$,%]/g, '')  // remove spaces, brackets, currency, % etc.
+    .replace(/\s+/g, '')              // remove spaces
+    .replace(/[\(\)\[\]€$,%]/g, '')   // remove brackets, currency, % etc.
     .replace(/conversionvalue/g, 'convvalue'); // simplify some patterns
 }
 
-// Parse a string to number, handling commas and empty values
+// Parse a string to number, handling EU and US formats, thousand separators, currency
 function parseNumber(value: string | undefined): number {
-  if (!value) return 0;
-  const cleaned = value.replace(/,/g, '.').replace(/[^\d.\-]/g, '');
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
+  if (!value || value === '' || value === '-') return 0;
+  let s = String(value).trim();
+  // Remove spaces, currency symbols
+  s = s.replace(/\s/g, '').replace(/[€$]/g, '');
+  // Handle EU format: 1.234,56 -> remove dots, replace comma with dot
+  if (s.includes(',') && s.includes('.')) {
+    // If both exist, assume EU format: dots are thousand separators
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (s.includes(',')) {
+    // Only comma: could be EU decimal (123,45) or US thousand (1,234)
+    // If comma is followed by exactly 2 digits at end, treat as decimal
+    if (/,\d{2}$/.test(s)) {
+      s = s.replace(',', '.');
+    } else {
+      s = s.replace(/,/g, '');
+    }
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
 }
 
 // Round to specified decimal places
