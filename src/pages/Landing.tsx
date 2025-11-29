@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -14,19 +15,9 @@ const Landing = () => {
     setIsTesting(true);
     setTestResponse(null);
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/test-claude`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-        }
-      );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Request failed");
-      setTestResponse(data.message || JSON.stringify(data));
+      const { data, error } = await supabase.functions.invoke("test-claude");
+      if (error) throw error;
+      setTestResponse(data?.message || JSON.stringify(data));
       toast.success("Claude API test successful!");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
