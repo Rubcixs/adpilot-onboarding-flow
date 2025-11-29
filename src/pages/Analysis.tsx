@@ -262,19 +262,41 @@ const Analysis = () => {
             </div>
 
             {/* Quick Verdict */}
-            <Card className="p-6 bg-accent/5 border-accent">
+            <Card 
+              className={`p-6 ${
+                insights?.quickVerdictTone === "positive" 
+                  ? "bg-accent/5 border-accent"
+                  : insights?.quickVerdictTone === "negative"
+                  ? "bg-destructive/5 border-destructive"
+                  : "bg-warning/5 border-warning"
+              }`}
+            >
               <div className="flex items-start gap-4">
-                <div className="h-10 w-10 rounded-xl bg-accent/20 flex items-center justify-center flex-shrink-0">
-                  <Target className="h-5 w-5 text-accent" />
+                <div 
+                  className={`h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    insights?.quickVerdictTone === "positive"
+                      ? "bg-accent/20"
+                      : insights?.quickVerdictTone === "negative"
+                      ? "bg-destructive/20"
+                      : "bg-warning/20"
+                  }`}
+                >
+                  <Target 
+                    className={`h-5 w-5 ${
+                      insights?.quickVerdictTone === "positive"
+                        ? "text-accent"
+                        : insights?.quickVerdictTone === "negative"
+                        ? "text-destructive"
+                        : "text-warning"
+                    }`}
+                  />
                 </div>
                 <div>
                   <h3 className="font-display font-semibold text-foreground mb-2">
                     Quick Verdict
                   </h3>
                   <p className="text-foreground leading-relaxed">
-                    Your campaigns are performing well overall with a strong ROAS of 3.2x. 
-                    However, there's significant room for improvement in creative performance 
-                    and audience targeting. Consider implementing the recommendations in the next tab.
+                    {insights?.quickVerdict || "Waiting for analysis..."}
                   </p>
                 </div>
               </div>
@@ -288,14 +310,19 @@ const Analysis = () => {
                   Best Performers
                 </h3>
                 <div className="space-y-3">
-                  {["Summer Sale Campaign", "New Customer Acquisition", "Retargeting - Cart Abandoners"].map((name, i) => (
+                  {insights?.bestPerformers?.map((item, i) => (
                     <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                      <span className="text-sm font-medium text-foreground">{name}</span>
+                      <span className="text-sm font-medium text-foreground">{item.id}</span>
                       <Badge variant="outline" className="bg-accent/10 text-accent border-accent/20">
-                        ROAS {(4.5 - i * 0.3).toFixed(1)}x
+                        {item.reason}
                       </Badge>
                     </div>
                   ))}
+                  {!insights?.bestPerformers?.length && (
+                    <p className="text-muted-foreground text-sm text-center py-4">
+                      No specific top performers identified.
+                    </p>
+                  )}
                 </div>
               </Card>
 
@@ -305,14 +332,19 @@ const Analysis = () => {
                   Needs Attention
                 </h3>
                 <div className="space-y-3">
-                  {["Brand Awareness", "Cold Audience - Broad", "Video Views Campaign"].map((name, i) => (
+                  {insights?.needsAttention?.map((item, i) => (
                     <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                      <span className="text-sm font-medium text-foreground">{name}</span>
+                      <span className="text-sm font-medium text-foreground">{item.id}</span>
                       <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20">
-                        ROAS {(1.2 + i * 0.2).toFixed(1)}x
+                        {item.reason}
                       </Badge>
                     </div>
                   ))}
+                  {!insights?.needsAttention?.length && (
+                    <p className="text-muted-foreground text-sm text-center py-4">
+                      No campaigns need attention.
+                    </p>
+                  )}
                 </div>
               </Card>
             </div>
