@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ChevronLeft, TrendingUp, TrendingDown, AlertCircle, CheckCircle2, Target, Lightbulb, FileSpreadsheet } from "lucide-react";
+import { ChevronLeft, TrendingUp, TrendingDown, AlertCircle, CheckCircle2, Target, Lightbulb, FileSpreadsheet, Banknote, Megaphone, Activity, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -40,6 +40,12 @@ interface AIInsights {
     needsAttention: { id: string; reason: string }[];
     whatsWorking: InsightItem[];
     whatsNotWorking: InsightItem[];
+    deepAnalysis?: {
+      funnelHealth: { status: string; title: string; description: string; metricToWatch: string };
+      opportunities: { title: string; description: string }[];
+      moneyWasters: { title: string; description: string }[];
+      creativeFatigue: { title: string; description: string }[];
+    };
   };
 }
 
@@ -350,9 +356,9 @@ const Analysis = () => {
             </div>
           </TabsContent>
 
-          {/* Insights Tab */}
+          {/* Insights Tab - Deep Dive Dashboard */}
           <TabsContent value="insights" className="space-y-6">
-            {!metrics ? (
+            {!hasAiInsights ? (
               <Card className="p-8 text-center">
                 <div className="flex flex-col items-center gap-4">
                   <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
@@ -360,194 +366,107 @@ const Analysis = () => {
                   </div>
                   <div>
                     <h3 className="font-display font-semibold text-foreground mb-2">
-                      No Data Available
+                      {aiInsightsError ? "Failed to Load Insights" : "Analyzing Data..."}
                     </h3>
                     <p className="text-muted-foreground max-w-md">
-                      Upload a CSV and run analysis to see insights here.
+                      {aiInsightsError || "Please wait while we generate your deep dive analysis."}
                     </p>
                   </div>
-                  <Button 
-                    variant="outline"
-                    onClick={() => navigate("/upload")}
-                    className="mt-2"
-                  >
-                    Upload CSV
-                  </Button>
                 </div>
               </Card>
-            ) : !hasAiInsights ? (
-              <div className="space-y-6">
-                <Card className="p-6">
-                  <div className="animate-pulse space-y-4">
-                    <div className="h-4 bg-muted rounded w-1/4"></div>
-                    <div className="h-20 bg-muted rounded"></div>
-                  </div>
-                </Card>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <Card className="p-6">
-                    <div className="animate-pulse space-y-4">
-                      <div className="h-6 bg-muted rounded w-1/3"></div>
-                      <div className="space-y-3">
-                        <div className="h-12 bg-muted rounded"></div>
-                        <div className="h-12 bg-muted rounded"></div>
-                        <div className="h-12 bg-muted rounded"></div>
-                      </div>
-                    </div>
-                  </Card>
-                  <Card className="p-6">
-                    <div className="animate-pulse space-y-4">
-                      <div className="h-6 bg-muted rounded w-1/3"></div>
-                      <div className="space-y-3">
-                        <div className="h-12 bg-muted rounded"></div>
-                        <div className="h-12 bg-muted rounded"></div>
-                        <div className="h-12 bg-muted rounded"></div>
-                      </div>
-                    </div>
-                  </Card>
-                </div>
-              </div>
-            ) : aiInsightsError ? (
-              <Card className="p-8 text-center">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="h-12 w-12 rounded-full bg-destructive/10 flex items-center justify-center">
-                    <AlertCircle className="h-6 w-6 text-destructive" />
-                  </div>
-                  <div>
-                    <h3 className="font-display font-semibold text-foreground mb-2">
-                      Failed to Load Insights
-                    </h3>
-                    <p className="text-muted-foreground max-w-md mb-2">
-                      We couldn't generate insights from the AI.
-                    </p>
-                    <p className="text-xs text-destructive/70 font-mono">
-                      Error: {aiInsightsError}
-                    </p>
-                  </div>
-                  <Button 
-                    variant="outline"
-                    onClick={() => window.location.reload()}
-                    className="mt-2"
-                  >
-                    Retry
-                  </Button>
-                </div>
-              </Card>
-            ) : hasAiInsights ? (
+            ) : (
               <>
-                {/* Quick Verdict Card */}
-                <Card 
-                  className={`p-6 ${
-                    insights.quickVerdictTone === "positive" 
-                      ? "bg-accent/5 border-accent"
-                      : insights.quickVerdictTone === "negative"
-                      ? "bg-destructive/5 border-destructive"
-                      : "bg-warning/5 border-warning"
-                  }`}
-                >
-                  <div className="flex items-start gap-4">
-                    <div 
-                      className={`h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                        insights.quickVerdictTone === "positive"
-                          ? "bg-accent/20"
-                          : insights.quickVerdictTone === "negative"
-                          ? "bg-destructive/20"
-                          : "bg-warning/20"
-                      }`}
-                    >
-                      <Target 
-                        className={`h-5 w-5 ${
-                          insights.quickVerdictTone === "positive"
-                            ? "text-accent"
-                            : insights.quickVerdictTone === "negative"
-                            ? "text-destructive"
-                            : "text-warning"
-                        }`}
-                      />
+                {/* 1. Funnel Health Section (Top) */}
+                {insights?.deepAnalysis?.funnelHealth && (
+                  <Card className={`p-6 border-l-4 ${insights.deepAnalysis.funnelHealth.status === 'Broken' ? 'border-l-destructive' : insights.deepAnalysis.funnelHealth.status === 'Warning' ? 'border-l-warning' : 'border-l-accent'}`}>
+                    <div className="flex items-start gap-4">
+                      <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Activity className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="font-display font-semibold text-foreground">
+                            {insights.deepAnalysis.funnelHealth.title}
+                          </h3>
+                          <Badge variant={insights.deepAnalysis.funnelHealth.status === 'Broken' ? 'destructive' : insights.deepAnalysis.funnelHealth.status === 'Warning' ? 'default' : 'default'}>
+                            {insights.deepAnalysis.funnelHealth.status}
+                          </Badge>
+                        </div>
+                        <p className="text-foreground leading-relaxed mb-3">
+                          {insights.deepAnalysis.funnelHealth.description}
+                        </p>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 p-2 rounded-md w-fit">
+                          <Target className="h-4 w-4" />
+                          <span>Fix Metric: <strong>{insights.deepAnalysis.funnelHealth.metricToWatch}</strong></span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-display font-semibold text-foreground mb-2">
-                        Quick Verdict
-                      </h3>
-                      <p className="text-foreground leading-relaxed">
-                        {insights.quickVerdict}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
+                  </Card>
+                )}
 
-                {/* Best Performers & Needs Attention */}
+                {/* 2. Financial Grid (Middle) */}
                 <div className="grid md:grid-cols-2 gap-6">
-                  {/* Best Performers */}
+                  {/* Opportunities (Green) */}
                   <Card className="p-6">
-                    <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-accent" />
-                      Best Performers
+                    <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2 text-accent">
+                      <TrendingUp className="h-5 w-5" />
+                      Profit Opportunities
                     </h3>
                     <div className="space-y-3">
-                      {insights.bestPerformers && insights.bestPerformers.length > 0 ? (
-                        insights.bestPerformers.map((item, idx) => (
-                          <div key={idx} className="flex flex-col gap-1 p-3 rounded-lg bg-muted/50">
-                            <span className="text-sm font-medium text-foreground">
-                              {item.id}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {item.reason}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          No top performers identified
-                        </p>
+                      {insights?.deepAnalysis?.opportunities?.map((item, i) => (
+                        <div key={i} className="p-3 rounded-lg bg-accent/5 border border-accent/20">
+                          <p className="font-medium text-foreground text-sm mb-1">{item.title}</p>
+                          <p className="text-xs text-muted-foreground">{item.description}</p>
+                        </div>
+                      ))}
+                      {(!insights?.deepAnalysis?.opportunities || insights.deepAnalysis.opportunities.length === 0) && (
+                         <p className="text-sm text-muted-foreground">No immediate scaling opportunities detected.</p>
                       )}
                     </div>
                   </Card>
 
-                  {/* Needs Attention */}
+                  {/* Money Wasters (Red) */}
                   <Card className="p-6">
-                    <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
-                      <TrendingDown className="h-5 w-5 text-warning" />
-                      Needs Attention
+                    <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2 text-destructive">
+                      <Banknote className="h-5 w-5" />
+                      Budget Leaks
                     </h3>
                     <div className="space-y-3">
-                      {insights.needsAttention && insights.needsAttention.length > 0 ? (
-                        insights.needsAttention.map((item, idx) => (
-                          <div key={idx} className="flex flex-col gap-1 p-3 rounded-lg bg-muted/50">
-                            <span className="text-sm font-medium text-foreground">
-                              {item.id}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {item.reason}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground text-center py-4">
-                          No campaigns need attention
-                        </p>
+                      {insights?.deepAnalysis?.moneyWasters?.map((item, i) => (
+                        <div key={i} className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
+                          <p className="font-medium text-foreground text-sm mb-1">{item.title}</p>
+                          <p className="text-xs text-muted-foreground">{item.description}</p>
+                        </div>
+                      ))}
+                      {(!insights?.deepAnalysis?.moneyWasters || insights.deepAnalysis.moneyWasters.length === 0) && (
+                         <p className="text-sm text-muted-foreground">No major budget leaks detected.</p>
                       )}
                     </div>
                   </Card>
                 </div>
 
-                {/* Debug Insights Panel */}
-                <Card className="p-6 bg-muted/30 border-muted">
-                  <div className="flex items-start gap-4">
-                    <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
-                      <AlertCircle className="h-5 w-5 text-muted-foreground" />
+                {/* 3. Creative Fatigue (Bottom) */}
+                {insights?.deepAnalysis?.creativeFatigue && insights.deepAnalysis.creativeFatigue.length > 0 && (
+                  <Card className="p-6 border-warning/50 bg-warning/5">
+                    <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2 text-warning">
+                      <Megaphone className="h-5 w-5" />
+                      Creative Fatigue Warnings
+                    </h3>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {insights.deepAnalysis.creativeFatigue.map((item, i) => (
+                        <div key={i} className="flex items-start gap-3">
+                          <div className="h-2 w-2 mt-2 rounded-full bg-warning flex-shrink-0" />
+                          <div>
+                            <p className="font-medium text-foreground text-sm">{item.title}</p>
+                            <p className="text-xs text-muted-foreground">{item.description}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-display font-semibold text-foreground mb-3">
-                        Debug Insights
-                      </h3>
-                      <pre className="text-xs font-mono whitespace-pre-wrap bg-background/50 p-4 rounded-lg overflow-x-auto">
-                        {JSON.stringify({ insights, aiInsightsError }, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                </Card>
+                  </Card>
+                )}
               </>
-            ) : null}
+            )}
           </TabsContent>
 
           {/* Recommendations Tab */}
