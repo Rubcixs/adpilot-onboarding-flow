@@ -5,6 +5,32 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// System prompt for AI analysis
+const ADPILOT_BRAIN_WITH_DATA = `You are AdPilot, an expert AI advertising analyst. You analyze Meta Ads performance data and provide actionable insights.
+
+Your task: Given CSV metrics and sample rows, identify what's working and what's not working in this ad account.
+
+Guidelines:
+- Be specific and data-driven in your observations
+- Reference actual numbers from the metrics when possible
+- Focus on actionable insights, not generic advice
+- Keep insights concise but meaningful
+- Consider CTR, CPA, ROAS, spend distribution, and conversion patterns
+
+You MUST respond with ONLY valid JSON in this exact format:
+{
+  "insights": {
+    "whatsWorking": [
+      { "title": "Brief title", "detail": "Specific observation with data reference" }
+    ],
+    "whatsNotWorking": [
+      { "title": "Brief title", "detail": "Specific observation with data reference" }
+    ]
+  }
+}
+
+Each array should have 3-5 items maximum. Be specific to the data provided.`;
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -77,6 +103,9 @@ serve(async (req) => {
     let hasResults = resultsCol !== null;
     let hasRevenue = revenueCol !== null;
 
+    // Collect sample rows (first 50) for AI analysis
+    const sampleRows: Record<string, string>[] = [];
+    
     for (let i = 1; i < lines.length; i++) {
       const row = parseCSVLine(lines[i]);
       
@@ -85,6 +114,15 @@ serve(async (req) => {
       if (hasClicks) totalClicks += toNumber(row[clicksCol!]);
       if (hasResults) totalResults += toNumber(row[resultsCol!]);
       if (hasRevenue) totalRevenue += toNumber(row[revenueCol!]);
+      
+      // Collect sample rows (up to 50)
+      if (i <= 50) {
+        const rowObj: Record<string, string> = {};
+        columnNames.forEach((col, idx) => {
+          rowObj[col] = row[idx] || '';
+        });
+        sampleRows.push(rowObj);
+      }
     }
 
     // Compute derived metrics
@@ -110,8 +148,77 @@ serve(async (req) => {
 
     console.log('Computed metrics:', metrics);
 
+    // Call Claude for AI insights
+    let aiInsights = null;
+    let aiError = false;
+    
+    const anthropicApiKey = Deno.env.get('ANTHROPIC_API_KEY');
+    
+    if (anthropicApiKey) {
+      try {
+        console.log('Calling Claude for AI insights...');
+        
+        const userMessage = JSON.stringify({
+          metrics,
+          columnNames,
+          sampleRows,
+          rowCount
+        });
+
+        const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicApiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            system: ADPILOT_BRAIN_WITH_DATA,
+            messages: [
+              { role: 'user', content: userMessage }
+            ]
+          })
+        });
+
+        if (!claudeResponse.ok) {
+          const errorText = await claudeResponse.text();
+          console.error('Claude API error:', claudeResponse.status, errorText);
+          aiError = true;
+        } else {
+          const claudeData = await claudeResponse.json();
+          console.log('Claude response received');
+          
+          // Extract the text content from Claude's response
+          const textContent = claudeData.content?.find((c: any) => c.type === 'text')?.text;
+          
+          if (textContent) {
+            try {
+              // Parse the JSON response from Claude
+              aiInsights = JSON.parse(textContent);
+              console.log('AI insights parsed successfully');
+            } catch (parseError) {
+              console.error('Failed to parse Claude response as JSON:', parseError);
+              console.log('Raw Claude response:', textContent);
+              aiError = true;
+            }
+          } else {
+            console.error('No text content in Claude response');
+            aiError = true;
+          }
+        }
+      } catch (claudeError) {
+        console.error('Error calling Claude:', claudeError);
+        aiError = true;
+      }
+    } else {
+      console.warn('ANTHROPIC_API_KEY not configured, skipping AI insights');
+      aiError = true;
+    }
+
     return new Response(
-      JSON.stringify({ ok: true, rowCount, columnNames, metrics }),
+      JSON.stringify({ ok: true, rowCount, columnNames, metrics, aiInsights, aiError }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
