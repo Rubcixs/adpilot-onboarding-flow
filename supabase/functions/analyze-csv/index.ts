@@ -72,7 +72,9 @@ Limits:
 - whatsWorking/whatsNotWorking: Max 3-5 items
 - opportunities/moneyWasters: 2-4 items each
 - creativeFatigue: 0-3 items (only if evident)
-- segmentAnalysis: Only include insights if segment data was provided (check if arrays are not empty)`;
+- segmentAnalysis: Only include insights if segment data was provided (check if arrays are not empty)
+
+IMPORTANT: Output RAW JSON only. Do not wrap in markdown. Do not add introductory text.`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -606,26 +608,23 @@ ${JSON.stringify(analysisSummary)}`;
           
           if (textContent) {
             try {
-              // Clean the response: trim, remove markdown code fences
-              let raw = textContent.trim();
-              raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-              
-              // Extract JSON between first { and last }
-              const firstBrace = raw.indexOf('{');
-              const lastBrace = raw.lastIndexOf('}');
-              
-              if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-                const cleaned = raw.substring(firstBrace, lastBrace + 1);
-                aiInsights = JSON.parse(cleaned);
-                console.log('AI insights parsed successfully');
-              } else {
-                throw new Error('No valid JSON object found in response');
-              }
+              const cleanedText = cleanJson(textContent);
+              aiInsights = JSON.parse(cleanedText);
+              console.log('AI insights parsed successfully');
             } catch (parseError: any) {
-              aiInsights = null;
-              aiInsightsError = 'Failed to parse Claude JSON';
-              console.error('Claude insights error:', aiInsightsError, parseError?.message);
+              console.error('JSON Parse Error:', parseError);
               console.log('Raw Claude response:', textContent);
+              // Fallback object so the UI doesn't crash
+              aiInsights = {
+                insights: {
+                  quickVerdict: "AI Analysis currently unavailable. Please check the raw metrics.",
+                  quickVerdictTone: "mixed",
+                  bestPerformers: [],
+                  needsAttention: [],
+                  deepAnalysis: null
+                }
+              };
+              aiInsightsError = 'Failed to parse Claude JSON';
             }
           } else {
             aiInsightsError = 'No text content in Claude response';
@@ -652,6 +651,19 @@ ${JSON.stringify(analysisSummary)}`;
   }
 });
 
+
+// Clean JSON response from AI (remove markdown, extract JSON object)
+function cleanJson(text: string): string {
+  // Remove markdown code fences
+  let cleaned = text.replace(/```json/g, '').replace(/```/g, '');
+  // Find the first '{' and last '}'
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace >= 0) {
+    cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+  }
+  return cleaned.trim();
+}
 
 // Round to specified decimal places
 function round(value: number, decimals: number): number {
