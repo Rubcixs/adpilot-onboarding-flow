@@ -1,5 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+// Exported system prompt constants - paste your text here
+export const ADPILOT_BRAIN_WITH_DATA = ``;
+
+export const ADPILOT_BRAIN_NO_DATA = ``;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
