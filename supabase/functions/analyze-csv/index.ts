@@ -87,16 +87,31 @@ serve(async (req) => {
       rawRows.push(rowObj);
     }
 
-    // Helper: parse number (EU format)
+    // Robust number parser
     function toNumber(value: any): number {
       if (value === null || value === undefined) return 0;
       if (typeof value === "number") return value;
+
       let s = String(value).trim();
-      s = s
-        .replace(/\s/g, "")      // remove spaces
-        .replace(/[€$]/g, "")    // remove currency
-        .replace(/\./g, "")      // remove thousand separators
-        .replace(",", ".");      // EU decimals
+      s = s.replace(/[€$]/g, "").replace(/\s/g, "");
+
+      const hasComma = s.includes(",");
+      const hasDot = s.includes(".");
+
+      if (hasComma && hasDot) {
+        const lastComma = s.lastIndexOf(",");
+        const lastDot = s.lastIndexOf(".");
+        if (lastComma > lastDot) {
+          // EU: 1.234,56 -> 1234.56
+          s = s.replace(/\./g, "").replace(",", ".");
+        } else {
+          // US: 1,234.56 -> 1234.56
+          s = s.replace(/,/g, "");
+        }
+      } else if (hasComma && !hasDot) {
+        s = s.replace(",", ".");
+      }
+
       const n = Number(s);
       return isNaN(n) ? 0 : n;
     }
@@ -117,32 +132,39 @@ serve(async (req) => {
 
     console.log('Column mapping:', { spendCol, impressionsCol, clicksCol, purchasesCol, revenueCol });
 
-    // --- 1) Detect ANY summary row (top, bottom, or in the middle) ---
-    let dataRows = rawRows;
-    if (rawRows.length > 1 && spendCol) {
-      const spends = rawRows.map(row => toNumber(row[spendCol]));
-      const totalSpendAll = spends.reduce((acc, v) => acc + v, 0);
+    // Choose primary "name" column depending on the file level
+    const hasAdName = columns.includes("Ad name");
+    const hasAdsetName = columns.includes("Ad set name");
+    const hasCampaignName = columns.includes("Campaign name");
 
-      const summaryIndices: number[] = [];
-      for (let i = 0; i < rawRows.length; i++) {
-        const rowSpend = spends[i];
-        const othersSpend = totalSpendAll - rowSpend;
-        if (othersSpend <= 0) continue;
-
-        // If this row's spend is ≈ sum of all other rows, it's a "Total" summary row
-        const diffRatio = Math.abs(rowSpend - othersSpend) / othersSpend;
-        if (diffRatio < 0.01) {
-          summaryIndices.push(i);
-        }
-      }
-
-      if (summaryIndices.length > 0) {
-        console.log(`Detected and excluding ${summaryIndices.length} summary row(s) at indices:`, summaryIndices);
-        dataRows = rawRows.filter((_, idx) => !summaryIndices.includes(idx));
-      }
+    let nameCol: string | null = null;
+    if (hasAdName) {
+      nameCol = "Ad name";
+    } else if (hasAdsetName) {
+      nameCol = "Ad set name";
+    } else if (hasCampaignName) {
+      nameCol = "Campaign name";
     }
 
-    console.log(`Using ${dataRows.length} data rows for aggregation (excluded summary rows)`);
+    console.log('Name column detected:', nameCol);
+
+    // Keep only rows that actually have a name (real data rows)
+    function isDataRow(row: any): boolean {
+      if (!nameCol) return true; // fallback: no name column, keep all
+      const name = String(row[nameCol] ?? "").trim();
+      if (!name) return false;   // no name -> summary / total row
+
+      // Optional extra guard: if spendCol exists and is 0, we can also drop it
+      if (spendCol) {
+        const spend = toNumber(row[spendCol]);
+        // Uncomment next line if you want to drop pure zero rows:
+        // if (spend === 0) return false;
+      }
+      return true;
+    }
+
+    const dataRows = rawRows.filter(isDataRow);
+    console.log(`Using ${dataRows.length} data rows for aggregation (filtered by name column)`);
 
     // --- 2) Aggregate metrics using ONLY dataRows (no summary rows) ---
     let totalSpend = 0;
