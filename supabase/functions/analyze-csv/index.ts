@@ -56,12 +56,16 @@ serve(async (req) => {
       colIndex[name.toLowerCase()] = idx;
     });
 
-    // Define column mappings (lowercase for matching)
-    const spendCol = findColumn(colIndex, ['amount spent (eur)', 'amount spent', 'spend', 'cost']);
+    console.log('Available column keys:', Object.keys(colIndex).join(', '));
+
+    // Define column mappings (lowercase for matching) - expanded for Meta CSV compatibility
+    const spendCol = findColumn(colIndex, ['amount spent (eur)', 'amount spent (usd)', 'amount spent', 'spend', 'cost']);
     const impressionsCol = findColumn(colIndex, ['impressions']);
     const clicksCol = findColumn(colIndex, ['clicks (all)', 'clicks', 'link clicks']);
-    const resultsCol = findColumn(colIndex, ['results', 'purchases', 'conversions']);
-    const revenueCol = findColumn(colIndex, ['purchases conversion value', 'conversion value', 'revenue', 'purchase value']);
+    const resultsCol = findColumn(colIndex, ['purchases', 'results', 'conversions', 'purchases (1-day click)', 'website purchases', 'meta purchases']);
+    const revenueCol = findColumn(colIndex, ['purchases conversion value', 'website purchases conversion value', 'meta purchase conversion value', 'conversion value', 'revenue', 'purchase value']);
+
+    console.log('Column mapping:', { spendCol, impressionsCol, clicksCol, resultsCol, revenueCol });
 
     // Parse data rows and compute sums
     let totalSpend = 0;
