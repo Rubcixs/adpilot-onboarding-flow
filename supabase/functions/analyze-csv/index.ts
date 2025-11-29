@@ -7,72 +7,37 @@ const corsHeaders = {
 
 // System prompt for AI analysis with Deep Dive
 const ADPILOT_BRAIN_WITH_DATA = `You are AdPilot, an elite media buyer AI.
-Your Goal: Analyze ad performance data and provide actionable insights.
+Your Goal: Analyze ad performance based on the user's KPI.
 
 INPUT DATA:
-- "context": Campaign goal, primary KPI, currency, data level
-- "funnelMetrics": CTR, CPC, CPM, conversion rate, cost per result
-- "accountMetrics": Total spend, impressions, clicks, results, revenue, averages
-- "topPerformers" and "worstPerformers": Best and worst performing entities
-- "segments": (Optional) Age, Placement, Day of Week breakdowns - ONLY if CSV had these columns
+- "context": Goal, KPI.
+- "funnelMetrics": CTR, CPC, Conversion Rates.
+- "segments": (Optional) Age, Gender, Placement data.
 
 OUTPUT FORMAT (JSON ONLY):
 {
   "insights": {
-    "quickVerdict": "1-2 sentence high-level summary of account health",
+    "quickVerdict": "Summary string...",
     "quickVerdictTone": "positive" | "negative" | "mixed",
-    "bestPerformers": [
-      { "id": "Entity name", "reason": "Why it performs well with specific numbers" }
-    ],
-    "needsAttention": [
-      { "id": "Entity name", "reason": "Why it needs attention with specific numbers" }
-    ],
-    "whatsWorking": [
-      { "title": "Brief title", "detail": "Specific observation with data" }
-    ],
-    "whatsNotWorking": [
-      { "title": "Brief title", "detail": "Specific observation with data" }
-    ],
+    "bestPerformers": [{ "id": "Name", "reason": "ROAS 4.5" }],
+    "needsAttention": [{ "id": "Name", "reason": "CPA $50" }],
+    "whatsWorking": [{ "title": "Brief title", "detail": "Specific observation with data" }],
+    "whatsNotWorking": [{ "title": "Brief title", "detail": "Specific observation with data" }],
     "deepAnalysis": {
-      "funnelHealth": {
-        "status": "Healthy" | "Warning" | "Broken",
-        "title": "Funnel health summary title",
-        "description": "1-2 sentences explaining funnel performance based on CTR, conversion rate, cost efficiency",
-        "metricToWatch": "Single most critical metric to fix (e.g., 'CTR 1.2%', 'Conversion rate 0.8%')"
-      },
-      "opportunities": [
-        { "title": "Scaling opportunity", "description": "Specific action to scale what's working" }
-      ],
-      "moneyWasters": [
-        { "title": "Budget leak", "description": "Specific inefficiency costing money" }
-      ],
-      "creativeFatigue": [
-        { "title": "Fatigue signal", "description": "Creative refresh needed" }
-      ]
+      "funnelHealth": { "status": "Healthy"|"Broken", "title": "...", "description": "...", "metricToWatch": "..." },
+      "opportunities": [{ "title": "...", "description": "..." }],
+      "moneyWasters": [{ "title": "...", "description": "..." }],
+      "creativeFatigue": [{ "title": "...", "description": "..." }]
     },
-    "segmentAnalysis": null OR {
-      "demographics": "Age/Gender insights if segment data exists, otherwise omit",
-      "placement": "Platform/Placement insights if segment data exists, otherwise omit",
-      "time": "Day of Week insights if segment data exists, otherwise omit"
-    }
+    "segmentAnalysis": null
   }
 }
 
-CRITICAL RULES:
-1. ALWAYS generate "deepAnalysis" (funnelHealth, opportunities, moneyWasters, creativeFatigue) based on general metrics, even if segments are missing.
-2. ONLY generate "segmentAnalysis" if "segments" input arrays contain data. If segments are empty or missing, set "segmentAnalysis" to null.
-3. Do NOT make up demographic/placement data if segments weren't provided.
-4. Be specific and data-driven. Reference actual numbers from the metrics.
-5. Adapt analysis to the campaign goal (purchases, leads, traffic, awareness).
-
-Limits:
-- bestPerformers: Max 3 items
-- needsAttention: Max 3 items  
-- whatsWorking/whatsNotWorking: 3-5 items each
-- opportunities/moneyWasters: 2-4 items each
-- creativeFatigue: 0-3 items (only if evident)
-
-IMPORTANT: Return RAW JSON only. No markdown. No introductory text.`;
+IMPORTANT:
+1. Output RAW JSON only. Do not wrap in markdown or code fences.
+2. Do NOT include introductory text like "Here is the JSON".
+3. Set "segmentAnalysis" to null if input segments are missing/empty.
+`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -615,11 +580,12 @@ ${JSON.stringify(analysisSummary)}`;
               // Fallback object so the UI doesn't crash
               aiInsights = {
                 insights: {
-                  quickVerdict: "AI Analysis currently unavailable. Please check the raw metrics.",
+                  quickVerdict: "AI analysis unavailable (Parse Error). Check raw metrics.",
                   quickVerdictTone: "mixed",
                   bestPerformers: [],
                   needsAttention: [],
-                  deepAnalysis: null
+                  deepAnalysis: null,
+                  segmentAnalysis: null
                 }
               };
               aiInsightsError = 'Failed to parse Claude JSON';

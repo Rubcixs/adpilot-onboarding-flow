@@ -657,39 +657,14 @@ const Analysis = () => {
           {/* Raw Data Tab */}
           <TabsContent value="raw">
             <Card className="p-6">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left p-3 font-medium text-foreground">Campaign</th>
-                      <th className="text-right p-3 font-medium text-foreground">Spend</th>
-                      <th className="text-right p-3 font-medium text-foreground">Impressions</th>
-                      <th className="text-right p-3 font-medium text-foreground">Clicks</th>
-                      <th className="text-right p-3 font-medium text-foreground">CTR</th>
-                      <th className="text-right p-3 font-medium text-foreground">CPA</th>
-                      <th className="text-right p-3 font-medium text-foreground">ROAS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      ["Summer Sale Campaign", "$3,200", "320K", "8,960", "2.8%", "$18.50", "4.5x"],
-                      ["New Customer Acquisition", "$2,800", "420K", "10,500", "2.5%", "$22.00", "3.8x"],
-                      ["Retargeting - Cart", "$1,500", "85K", "2,550", "3.0%", "$16.20", "4.2x"],
-                      ["Brand Awareness", "$2,400", "580K", "11,600", "2.0%", "$45.00", "1.2x"],
-                      ["Cold - Broad Targeting", "$1,800", "380K", "7,600", "2.0%", "$42.50", "1.4x"],
-                    ].map((row, i) => (
-                      <tr key={i} className="border-b border-border hover:bg-muted/50">
-                        <td className="p-3 text-foreground">{row[0]}</td>
-                        <td className="p-3 text-right text-foreground">{row[1]}</td>
-                        <td className="p-3 text-right text-muted-foreground">{row[2]}</td>
-                        <td className="p-3 text-right text-muted-foreground">{row[3]}</td>
-                        <td className="p-3 text-right text-muted-foreground">{row[4]}</td>
-                        <td className="p-3 text-right text-muted-foreground">{row[5]}</td>
-                        <td className="p-3 text-right font-medium text-foreground">{row[6]}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="p-8 text-center">
+                <FileSpreadsheet className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="font-display font-semibold text-foreground mb-2">
+                  Raw Data Viewer
+                </h3>
+                <p className="text-muted-foreground max-w-md mx-auto">
+                  Detailed row-by-row data will be displayed here in a future update. For now, review the Overview and Insights tabs for your analysis.
+                </p>
               </div>
             </Card>
           </TabsContent>
