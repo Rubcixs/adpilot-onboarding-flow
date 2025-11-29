@@ -50,22 +50,53 @@ serve(async (req) => {
 
     console.log(`Parsed CSV: ${rowCount} rows, columns: ${columnNames.join(', ')}`);
 
-    // Build column index map for quick lookup
-    const colIndex: Record<string, number> = {};
+    // Build normalized header map
+    const headerMap: Record<string, number> = {};
     columnNames.forEach((name, idx) => {
-      colIndex[name.toLowerCase()] = idx;
+      const normalized = normalizeHeader(name);
+      headerMap[normalized] = idx;
     });
 
-    console.log('Available column keys:', Object.keys(colIndex).join(', '));
+    console.log('Normalized headers:', Object.keys(headerMap).join(', '));
 
-    // Define column mappings (lowercase for matching) - expanded for Meta CSV compatibility
-    const spendCol = findColumn(colIndex, ['amount spent (eur)', 'amount spent (usd)', 'amount spent', 'spend', 'cost']);
-    const impressionsCol = findColumn(colIndex, ['impressions']);
-    const clicksCol = findColumn(colIndex, ['clicks (all)', 'clicks', 'link clicks']);
-    const resultsCol = findColumn(colIndex, ['purchases', 'results', 'conversions', 'purchases (1-day click)', 'website purchases', 'meta purchases']);
-    const revenueCol = findColumn(colIndex, ['purchases conversion value', 'website purchases conversion value', 'meta purchase conversion value', 'conversion value', 'revenue', 'purchase value']);
+    // Resolve columns using normalized headers
+    const spendCol = 
+      headerMap['amountspent'] ??
+      headerMap['amountspentall'] ??
+      headerMap['amountspenteur'] ??
+      headerMap['amountspentusd'] ??
+      headerMap['spend'] ??
+      null;
 
-    console.log('Column mapping:', { spendCol, impressionsCol, clicksCol, resultsCol, revenueCol });
+    const impressionsCol = headerMap['impressions'] ?? null;
+
+    const clicksCol =
+      headerMap['clicksall'] ??
+      headerMap['linkclicksall'] ??
+      headerMap['linkclicks'] ??
+      headerMap['clicks'] ??
+      null;
+
+    const resultsCol =
+      headerMap['purchases'] ??
+      headerMap['results'] ??
+      headerMap['conversions'] ??
+      headerMap['leads'] ??
+      headerMap['websitepurchases'] ??
+      headerMap['metapurchases'] ??
+      null;
+
+    const revenueCol =
+      headerMap['purchasesconvvalue'] ??
+      headerMap['purchaseconvvalue'] ??
+      headerMap['convvalue'] ??
+      headerMap['totalconvvalue'] ??
+      headerMap['websitepurchasesconvvalue'] ??
+      headerMap['metapurchaseconvvalue'] ??
+      headerMap['revenue'] ??
+      null;
+
+    console.log('Column indices:', { spendCol, impressionsCol, clicksCol, resultsCol, revenueCol });
 
     // Parse data rows and compute sums
     let totalSpend = 0;
@@ -126,14 +157,12 @@ serve(async (req) => {
   }
 });
 
-// Find column index by checking multiple possible names
-function findColumn(colIndex: Record<string, number>, possibleNames: string[]): number | null {
-  for (const name of possibleNames) {
-    if (colIndex[name] !== undefined) {
-      return colIndex[name];
-    }
-  }
-  return null;
+// Normalize header names to remove special characters and simplify matching
+function normalizeHeader(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[\s\(\)\[\]€$,%]/g, '')  // remove spaces, brackets, currency, % etc.
+    .replace(/conversionvalue/g, 'convvalue'); // simplify some patterns
 }
 
 // Parse a string to number, handling commas and empty values
