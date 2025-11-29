@@ -50,52 +50,17 @@ serve(async (req) => {
 
     console.log(`Parsed CSV: ${rowCount} rows, columns: ${columnNames.join(', ')}`);
 
-    // Build normalized header map
-    const headerMap: Record<string, number> = {};
-    columnNames.forEach((name, idx) => {
-      const normalized = normalizeHeader(name);
-      headerMap[normalized] = idx;
-    });
+    // Direct column name mapping - use exact names from CSV
+    function getColIndex(name: string): number | null {
+      const idx = columnNames.indexOf(name);
+      return idx >= 0 ? idx : null;
+    }
 
-    console.log('Normalized headers:', Object.keys(headerMap).join(', '));
-
-    // Resolve columns using normalized headers - comprehensive alias lists for Meta CSV variants
-    const spendCol = 
-      headerMap['amountspenteur'] ??
-      headerMap['amountspent'] ??
-      headerMap['amountspentall'] ??
-      headerMap['amountspentusd'] ??
-      headerMap['spend'] ??
-      null;
-
-    const impressionsCol = headerMap['impressions'] ?? null;
-
-    const clicksCol =
-      headerMap['linkclicksall'] ??
-      headerMap['clicksall'] ??
-      headerMap['linkclicks'] ??
-      headerMap['clicks'] ??
-      null;
-
-    const resultsCol =
-      headerMap['purchases'] ??
-      headerMap['results'] ??
-      headerMap['conversions'] ??
-      headerMap['leads'] ??
-      headerMap['websitepurchases'] ??
-      headerMap['metapurchases'] ??
-      headerMap['onfacebookleads'] ??
-      null;
-
-    const revenueCol =
-      headerMap['purchasesconvvalue'] ??
-      headerMap['purchaseconvvalue'] ??
-      headerMap['convvalue'] ??
-      headerMap['totalconvvalue'] ??
-      headerMap['websitepurchasesconvvalue'] ??
-      headerMap['metapurchaseconvvalue'] ??
-      headerMap['revenue'] ??
-      null;
+    const spendCol = getColIndex("Amount spent (EUR)");
+    const impressionsCol = getColIndex("Impressions");
+    const clicksCol = getColIndex("Clicks (all)");
+    const resultsCol = getColIndex("Purchases");
+    const revenueCol = getColIndex("Purchases conversion value");
 
     console.log('Column indices:', { spendCol, impressionsCol, clicksCol, resultsCol, revenueCol });
 
@@ -115,11 +80,11 @@ serve(async (req) => {
     for (let i = 1; i < lines.length; i++) {
       const row = parseCSVLine(lines[i]);
       
-      if (hasSpend) totalSpend += parseNumber(row[spendCol!]);
-      if (hasImpressions) totalImpressions += parseNumber(row[impressionsCol!]);
-      if (hasClicks) totalClicks += parseNumber(row[clicksCol!]);
-      if (hasResults) totalResults += parseNumber(row[resultsCol!]);
-      if (hasRevenue) totalRevenue += parseNumber(row[revenueCol!]);
+      if (hasSpend) totalSpend += toNumber(row[spendCol!]);
+      if (hasImpressions) totalImpressions += toNumber(row[impressionsCol!]);
+      if (hasClicks) totalClicks += toNumber(row[clicksCol!]);
+      if (hasResults) totalResults += toNumber(row[resultsCol!]);
+      if (hasRevenue) totalRevenue += toNumber(row[revenueCol!]);
     }
 
     // Compute derived metrics
@@ -159,18 +124,10 @@ serve(async (req) => {
   }
 });
 
-// Normalize header names to remove special characters and simplify matching
-function normalizeHeader(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/\s+/g, '')              // remove spaces
-    .replace(/[\(\)\[\]€$,%]/g, '')   // remove brackets, currency, % etc.
-    .replace(/conversionvalue/g, 'convvalue'); // simplify some patterns
-}
-
 // Parse a string to number, handling EU and US formats, thousand separators, currency
-function parseNumber(value: string | undefined): number {
-  if (!value || value === '' || value === '-') return 0;
+function toNumber(value: any): number {
+  if (value === null || value === undefined || value === '' || value === '-') return 0;
+  if (typeof value === 'number') return value;
   let s = String(value).trim();
   // Remove spaces, currency symbols
   s = s.replace(/\s/g, '').replace(/[€$]/g, '');
@@ -190,6 +147,7 @@ function parseNumber(value: string | undefined): number {
   const n = parseFloat(s);
   return isNaN(n) ? 0 : n;
 }
+
 
 // Round to specified decimal places
 function round(value: number, decimals: number): number {
