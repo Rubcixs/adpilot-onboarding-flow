@@ -5,18 +5,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// System prompt for AI analysis
-const ADPILOT_BRAIN_WITH_DATA = `You are AdPilot, an expert AI advertising analyst. You analyze Meta Ads performance data and provide actionable insights.
+// System prompt for AI analysis with Deep Dive
+const ADPILOT_BRAIN_WITH_DATA = `You are AdPilot, an expert AI advertising analyst. You analyze Meta Ads performance data and provide actionable, context-aware insights.
 
-Your task: Given CSV metrics and sample rows, identify what's working and what's not working in this ad account.
+Your task: Given CSV metrics with funnel context, identify what's working, what's not working, and provide a professional deep dive analysis.
 
 Guidelines:
 - Be specific and data-driven in your observations
 - Reference actual numbers from the metrics when possible
 - Focus on actionable insights, not generic advice
 - Keep insights concise but meaningful
-- Consider CTR, CPA, ROAS, spend distribution, and conversion patterns
-- If Ad-level or Ad Set-level data is present, prioritize insights at that level over generic Campaign insights
+- Consider CTR, CPA, ROAS, spend distribution, conversion patterns, and funnel health
+- Adapt your analysis to the campaign goal (purchases, leads, traffic, awareness)
+- Identify opportunities, budget leaks, and creative fatigue signals
 
 You MUST respond with ONLY valid JSON in this exact format:
 {
@@ -24,24 +25,43 @@ You MUST respond with ONLY valid JSON in this exact format:
     "quickVerdict": "A 1-2 sentence high-level summary of account health.",
     "quickVerdictTone": "positive" | "negative" | "mixed",
     "bestPerformers": [
-      { "id": "Exact Name from data (Ad, Ad Set, or Campaign)", "reason": "Why it is a winner with EXACT NUMBERS (e.g. 'ROAS 4.5x vs avg 2.0x' or 'CPA $12 vs avg $35')" }
+      { "id": "Exact Name from data", "reason": "Why it is a winner with EXACT NUMBERS" }
     ],
     "needsAttention": [
-      { "id": "Exact Name from data (Ad, Ad Set, or Campaign)", "reason": "Why it needs help with EXACT NUMBERS (e.g. 'CPA $85 is 2.5x higher than avg' or 'ROAS 0.8x losing money')" }
+      { "id": "Exact Name from data", "reason": "Why it needs help with EXACT NUMBERS" }
     ],
     "whatsWorking": [
       { "title": "Brief title", "detail": "Specific observation with data reference" }
     ],
     "whatsNotWorking": [
       { "title": "Brief title", "detail": "Specific observation with data reference" }
-    ]
+    ],
+    "deepAnalysis": {
+      "funnelHealth": {
+        "status": "Healthy" | "Warning" | "Broken",
+        "title": "Funnel Health Status title",
+        "description": "1-2 sentences explaining funnel performance based on CTR, conversion rate, and cost efficiency",
+        "metricToWatch": "The single most critical metric to fix (e.g., 'CTR 1.2% is below benchmark', 'Conversion rate 0.8%')"
+      },
+      "opportunities": [
+        { "title": "Scaling opportunity title", "description": "Specific action to scale what's working" }
+      ],
+      "moneyWasters": [
+        { "title": "Budget leak title", "description": "Specific inefficiency costing money" }
+      ],
+      "creativeFatigue": [
+        { "title": "Fatigue signal title", "description": "Creative refresh or rotation needed" }
+      ]
+    }
   }
 }
 
 Limits:
 - bestPerformers: Max 3 items
 - needsAttention: Max 3 items
-- whatsWorking/whatsNotWorking: Max 3-5 items`;
+- whatsWorking/whatsNotWorking: Max 3-5 items
+- opportunities/moneyWasters: 2-4 items each
+- creativeFatigue: 0-3 items (only if evident)`;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -429,24 +449,39 @@ serve(async (req) => {
     const avgCpa = rowSummaries.filter(r => r.cpa !== null).reduce((sum, r) => sum + (r.cpa || 0), 0) / rowSummaries.filter(r => r.cpa !== null).length || null;
     const avgRoas = rowSummaries.filter(r => r.roas !== null).reduce((sum, r) => sum + (r.roas || 0), 0) / rowSummaries.filter(r => r.roas !== null).length || null;
 
-    // Build compact analysis summary for Claude
+    // Calculate deep dive metrics
+    const totalResults = goal === "purchases" ? totalPurchases : (goal === "leads" ? totalLeads : totalClicks);
+    const conversionRate = totalClicks > 0 ? (totalResults / totalClicks) * 100 : 0;
+    
+    // Build enriched analysis summary for Claude
     const analysisSummary = {
-      analysisLevel: nameCol || "unknown", // Tell Claude what level this is (Ad name, Ad set name, Campaign name)
+      analysisLevel: nameCol || "unknown",
+      context: {
+        goal: goal,
+        primaryKpi: metrics.primaryKpiLabel,
+        currency: "EUR",
+        totalRows: dataRows.length
+      },
+      funnelMetrics: {
+        ctr: metrics.ctr,
+        cpc: metrics.cpc,
+        cpm: metrics.cpm,
+        conversionRate: round(conversionRate, 2),
+        costPerResult: metrics.primaryKpiValue
+      },
       accountMetrics: {
         totalSpend: metrics.totalSpend,
         totalImpressions: metrics.totalImpressions,
         totalClicks: metrics.totalClicks,
-        totalResults: goal === "purchases" ? totalPurchases : (goal === "leads" ? totalLeads : totalClicks),
+        totalResults: totalResults,
         totalRevenue: metrics.totalRevenue,
         avgCtr: metrics.ctr,
         avgCpc: metrics.cpc,
         avgCpa: avgCpa ? round(avgCpa, 2) : (metrics.cpp || metrics.cpl),
         avgRoas: avgRoas ? round(avgRoas, 2) : metrics.roas,
         totalEntities: rowSummaries.length,
-        totalRows: dataRows.length,
-        goal: goal,
       },
-      topPerformers, // Pass the granular rows
+      topPerformers,
       worstPerformers,
     };
 
