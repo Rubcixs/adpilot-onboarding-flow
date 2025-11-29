@@ -1,24 +1,82 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ChevronLeft } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { ChevronLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import WizardProgress from "@/components/WizardProgress";
 
 const Step4 = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const prevState = location.state as Record<string, any> || {};
+  const { toast } = useToast();
+  
   const [budget, setBudget] = useState([2000]);
   const [budgetNotSure, setBudgetNotSure] = useState(false);
   const [expectedResults, setExpectedResults] = useState("");
   const [resultsNotSure, setResultsNotSure] = useState(false);
   const [hasRunAds, setHasRunAds] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleNext = () => {
-    navigate("/wizard/results");
+  const handleGeneratePlan = async () => {
+    setIsLoading(true);
+    
+    try {
+      // Combine all wizard data
+      const completeData = {
+        ...prevState,
+        budget: budgetNotSure ? null : budget[0],
+        budgetNotSure,
+        expectedResults: resultsNotSure ? null : (expectedResults ? parseInt(expectedResults) : null),
+        resultsNotSure,
+        hasRunAds,
+      };
+
+      console.log("Sending to adpilot-brain:", completeData);
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/adpilot-brain`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ type: "no-data", data: completeData }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("API error:", errorText);
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log("AI response:", result);
+
+      // Navigate to results with the plan
+      navigate("/wizard/results", {
+        state: {
+          plan: result,
+          userInput: completeData,
+        },
+      });
+    } catch (error) {
+      console.error("Error generating plan:", error);
+      toast({
+        title: "Failed to generate plan",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleBack = () => {
@@ -161,15 +219,22 @@ const Step4 = () => {
           </div>
 
           <div className="flex gap-3 mt-8">
-            <Button variant="outline" onClick={handleBack} className="flex-1">
+            <Button variant="outline" onClick={handleBack} className="flex-1" disabled={isLoading}>
               Back
             </Button>
             <Button
-              onClick={handleNext}
-              disabled={!isValid}
+              onClick={handleGeneratePlan}
+              disabled={!isValid || isLoading}
               className="flex-1 bg-accent hover:bg-accent-glow"
             >
-              Generate My Plan
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating Plan...
+                </>
+              ) : (
+                "Generate My Plan"
+              )}
             </Button>
           </div>
         </Card>
