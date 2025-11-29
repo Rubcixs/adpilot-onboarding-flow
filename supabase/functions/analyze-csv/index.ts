@@ -76,81 +76,120 @@ serve(async (req) => {
 
     console.log(`Parsed CSV: ${rowCount} rows, columns: ${columnNames.join(', ')}`);
 
-    // Direct column name mapping - use exact names from CSV
-    function getColIndex(name: string): number | null {
-      const idx = columnNames.indexOf(name);
-      return idx >= 0 ? idx : null;
+    // Parse all data rows into records
+    const rawRows: Record<string, string>[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const row = parseCSVLine(lines[i]);
+      const rowObj: Record<string, string> = {};
+      columnNames.forEach((col, idx) => {
+        rowObj[col] = row[idx] || '';
+      });
+      rawRows.push(rowObj);
     }
 
-    const spendCol = getColIndex("Amount spent (EUR)");
-    const impressionsCol = getColIndex("Impressions");
-    const clicksCol = getColIndex("Clicks (all)");
-    const resultsCol = getColIndex("Purchases");
-    const revenueCol = getColIndex("Purchases conversion value");
+    // Helper: parse number (EU format)
+    function toNumber(value: any): number {
+      if (value === null || value === undefined) return 0;
+      if (typeof value === "number") return value;
+      let s = String(value).trim();
+      s = s
+        .replace(/\s/g, "")      // remove spaces
+        .replace(/[€$]/g, "")    // remove currency
+        .replace(/\./g, "")      // remove thousand separators
+        .replace(",", ".");      // EU decimals
+      const n = Number(s);
+      return isNaN(n) ? 0 : n;
+    }
 
-    console.log('Column indices:', { spendCol, impressionsCol, clicksCol, resultsCol, revenueCol });
+    const firstRow = rawRows[0] ?? {};
+    const columns = Object.keys(firstRow);
 
-    // Parse data rows and compute sums
+    function getCol(name: string): string | null {
+      return columns.includes(name) ? name : null;
+    }
+
+    // Exact Meta header from CSV
+    const spendCol = getCol("Amount spent (EUR)");
+    const impressionsCol = getCol("Impressions");
+    const clicksCol = getCol("Clicks (all)");
+    const purchasesCol = getCol("Purchases");
+    const revenueCol = getCol("Purchases conversion value");
+
+    console.log('Column mapping:', { spendCol, impressionsCol, clicksCol, purchasesCol, revenueCol });
+
+    // --- 1) Detect ANY summary row (top, bottom, or in the middle) ---
+    let dataRows = rawRows;
+    if (rawRows.length > 1 && spendCol) {
+      const spends = rawRows.map(row => toNumber(row[spendCol]));
+      const totalSpendAll = spends.reduce((acc, v) => acc + v, 0);
+
+      const summaryIndices: number[] = [];
+      for (let i = 0; i < rawRows.length; i++) {
+        const rowSpend = spends[i];
+        const othersSpend = totalSpendAll - rowSpend;
+        if (othersSpend <= 0) continue;
+
+        // If this row's spend is ≈ sum of all other rows, it's a "Total" summary row
+        const diffRatio = Math.abs(rowSpend - othersSpend) / othersSpend;
+        if (diffRatio < 0.01) {
+          summaryIndices.push(i);
+        }
+      }
+
+      if (summaryIndices.length > 0) {
+        console.log(`Detected and excluding ${summaryIndices.length} summary row(s) at indices:`, summaryIndices);
+        dataRows = rawRows.filter((_, idx) => !summaryIndices.includes(idx));
+      }
+    }
+
+    console.log(`Using ${dataRows.length} data rows for aggregation (excluded summary rows)`);
+
+    // --- 2) Aggregate metrics using ONLY dataRows (no summary rows) ---
     let totalSpend = 0;
     let totalImpressions = 0;
     let totalClicks = 0;
     let totalResults = 0;
     let totalRevenue = 0;
 
-    let hasSpend = spendCol !== null;
-    let hasImpressions = impressionsCol !== null;
-    let hasClicks = clicksCol !== null;
-    let hasResults = resultsCol !== null;
-    let hasRevenue = revenueCol !== null;
+    for (const row of dataRows) {
+      if (spendCol) totalSpend += toNumber(row[spendCol]);
+      if (impressionsCol) totalImpressions += toNumber(row[impressionsCol]);
+      if (clicksCol) totalClicks += toNumber(row[clicksCol]);
+      if (purchasesCol) totalResults += toNumber(row[purchasesCol]);
+      if (revenueCol) totalRevenue += toNumber(row[revenueCol]);
+    }
+
+    const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
+    const cpc = totalClicks > 0 ? totalSpend / totalClicks : null;
+    const cpa = totalResults > 0 ? totalSpend / totalResults : null;
+    const roas = totalSpend > 0 ? totalRevenue / totalSpend : null;
 
     // Collect sample rows (first 10) for AI analysis - only key columns to reduce token usage
-    const sampleRows: Record<string, string>[] = [];
     const keyColumns = [
       "Campaign name", "Ad set name", "Ad name",
-      "Amount spent (EUR)", "Impressions", "Clicks (all)", 
+      "Amount spent (EUR)", "Impressions", "Clicks (all)",
       "CTR (all)", "CPC (all) (EUR)", "Purchases", "Purchases conversion value"
     ];
     const availableKeyColumns = keyColumns.filter(col => columnNames.includes(col));
-    
-    for (let i = 1; i < lines.length; i++) {
-      const row = parseCSVLine(lines[i]);
-      
-      if (hasSpend) totalSpend += toNumber(row[spendCol!]);
-      if (hasImpressions) totalImpressions += toNumber(row[impressionsCol!]);
-      if (hasClicks) totalClicks += toNumber(row[clicksCol!]);
-      if (hasResults) totalResults += toNumber(row[resultsCol!]);
-      if (hasRevenue) totalRevenue += toNumber(row[revenueCol!]);
-      
-      // Collect sample rows (up to 10, key columns only)
-      if (i <= 10) {
-        const rowObj: Record<string, string> = {};
-        availableKeyColumns.forEach(col => {
-          const idx = columnNames.indexOf(col);
-          if (idx >= 0) rowObj[col] = row[idx] || '';
-        });
-        sampleRows.push(rowObj);
-      }
-    }
+    const sampleRows = dataRows.slice(0, 10).map(row => {
+      const sample: Record<string, string> = {};
+      availableKeyColumns.forEach(col => {
+        sample[col] = row[col] || '';
+      });
+      return sample;
+    });
 
     // Compute derived metrics
     const metrics = {
-      totalSpend: hasSpend ? round(totalSpend, 2) : null,
-      totalImpressions: hasImpressions ? totalImpressions : null,
-      totalClicks: hasClicks ? totalClicks : null,
-      totalResults: hasResults ? totalResults : null,
-      totalRevenue: hasRevenue ? round(totalRevenue, 2) : null,
-      ctr: (hasClicks && hasImpressions && totalImpressions > 0) 
-        ? round((totalClicks / totalImpressions) * 100, 2) 
-        : null,
-      cpc: (hasSpend && hasClicks && totalClicks > 0) 
-        ? round(totalSpend / totalClicks, 2) 
-        : null,
-      cpa: (hasSpend && hasResults && totalResults > 0) 
-        ? round(totalSpend / totalResults, 2) 
-        : null,
-      roas: (hasRevenue && hasSpend && totalSpend > 0) 
-        ? round(totalRevenue / totalSpend, 2) 
-        : null,
+      totalSpend: spendCol ? round(totalSpend, 2) : null,
+      totalImpressions: impressionsCol ? totalImpressions : null,
+      totalClicks: clicksCol ? totalClicks : null,
+      totalResults: purchasesCol ? totalResults : null,
+      totalRevenue: revenueCol ? round(totalRevenue, 2) : null,
+      ctr: ctr ? round(ctr, 2) : null,
+      cpc: cpc ? round(cpc, 2) : null,
+      cpa: cpa ? round(cpa, 2) : null,
+      roas: roas ? round(roas, 2) : null,
     };
 
     console.log('Computed metrics:', metrics);
@@ -237,30 +276,6 @@ serve(async (req) => {
     );
   }
 });
-
-// Parse a string to number, handling EU and US formats, thousand separators, currency
-function toNumber(value: any): number {
-  if (value === null || value === undefined || value === '' || value === '-') return 0;
-  if (typeof value === 'number') return value;
-  let s = String(value).trim();
-  // Remove spaces, currency symbols
-  s = s.replace(/\s/g, '').replace(/[€$]/g, '');
-  // Handle EU format: 1.234,56 -> remove dots, replace comma with dot
-  if (s.includes(',') && s.includes('.')) {
-    // If both exist, assume EU format: dots are thousand separators
-    s = s.replace(/\./g, '').replace(',', '.');
-  } else if (s.includes(',')) {
-    // Only comma: could be EU decimal (123,45) or US thousand (1,234)
-    // If comma is followed by exactly 2 digits at end, treat as decimal
-    if (/,\d{2}$/.test(s)) {
-      s = s.replace(',', '.');
-    } else {
-      s = s.replace(/,/g, '');
-    }
-  }
-  const n = parseFloat(s);
-  return isNaN(n) ? 0 : n;
-}
 
 
 // Round to specified decimal places
