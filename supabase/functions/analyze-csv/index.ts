@@ -292,7 +292,13 @@ serve(async (req) => {
       try {
         console.log('Calling Claude for AI insights...');
         
-        const userMessage = `Analyze this Meta Ads account data and provide insights on what's working and what's not working.\n\n${JSON.stringify(analysisSummary)}`;
+        const userMessage = `Analyze this Meta Ads account data and provide insights on what's working and what's not working.
+
+You MUST respond with raw JSON only.
+Do NOT include any backticks, code fences, or markdown formatting.
+The first character of your reply must be { and the last character must be }.
+
+${JSON.stringify(analysisSummary)}`;
 
         const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
