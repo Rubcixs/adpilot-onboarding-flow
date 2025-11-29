@@ -16,6 +16,7 @@ Guidelines:
 - Focus on actionable insights, not generic advice
 - Keep insights concise but meaningful
 - Consider CTR, CPA, ROAS, spend distribution, and conversion patterns
+- If Ad-level or Ad Set-level data is present, prioritize insights at that level over generic Campaign insights
 
 You MUST respond with ONLY valid JSON in this exact format:
 {
@@ -23,10 +24,10 @@ You MUST respond with ONLY valid JSON in this exact format:
     "quickVerdict": "A 1-2 sentence high-level summary of account health.",
     "quickVerdictTone": "positive" | "negative" | "mixed",
     "bestPerformers": [
-      { "id": "Exact Campaign Name from data", "reason": "Why it is a winner (e.g. ROAS 4.5)" }
+      { "id": "Exact Name from data (Ad, Ad Set, or Campaign)", "reason": "Why it is a winner with EXACT NUMBERS (e.g. 'ROAS 4.5x vs avg 2.0x' or 'CPA $12 vs avg $35')" }
     ],
     "needsAttention": [
-      { "id": "Exact Campaign Name from data", "reason": "Why it needs help (e.g. High CPA)" }
+      { "id": "Exact Name from data (Ad, Ad Set, or Campaign)", "reason": "Why it needs help with EXACT NUMBERS (e.g. 'CPA $85 is 2.5x higher than avg' or 'ROAS 0.8x losing money')" }
     ],
     "whatsWorking": [
       { "title": "Brief title", "detail": "Specific observation with data reference" }
@@ -362,28 +363,37 @@ serve(async (req) => {
 
     console.log('Computed metrics:', metrics);
 
-    // --- Build campaign-level summaries for Claude ---
-    // Group data by campaign name
-    const campaignMap = new Map<string, { spend: number; impressions: number; clicks: number; results: number; revenue: number }>();
-    const campaignNameCol = columns.includes("Campaign name") ? "Campaign name" : null;
-
-    if (campaignNameCol) {
+    // --- Build granular summaries for Claude ---
+    // Group data by the detected primary name column (Ad name > Ad set name > Campaign name)
+    const rowMap = new Map<string, { spend: number; impressions: number; clicks: number; results: number; revenue: number }>();
+    
+    // Use the nameCol we detected earlier (lines 147-158)
+    if (nameCol) {
       for (const row of dataRows) {
-        const campName = String(row[campaignNameCol] ?? "").trim();
-        if (!campName) continue;
+        const entityName = String(row[nameCol] ?? "").trim();
+        if (!entityName) continue;
 
-        const existing = campaignMap.get(campName) || { spend: 0, impressions: 0, clicks: 0, results: 0, revenue: 0 };
+        const existing = rowMap.get(entityName) || { spend: 0, impressions: 0, clicks: 0, results: 0, revenue: 0 };
         existing.spend += spendCol ? toNumber(row[spendCol]) : 0;
         existing.impressions += impressionsCol ? toNumber(row[impressionsCol]) : 0;
         existing.clicks += clicksCol ? toNumber(row[clicksCol]) : 0;
-        existing.results += purchasesCol ? toNumber(row[purchasesCol]) : 0;
+        
+        // Use the correct results column based on goal
+        if (goal === "purchases") {
+          existing.results += purchasesCol ? toNumber(row[purchasesCol]) : 0;
+        } else if (goal === "leads") {
+          existing.results += leadsCol ? toNumber(row[leadsCol]) : 0;
+        } else {
+          existing.results += totalClicks; // For traffic/awareness
+        }
+        
         existing.revenue += revenueCol ? toNumber(row[revenueCol]) : 0;
-        campaignMap.set(campName, existing);
+        rowMap.set(entityName, existing);
       }
     }
 
     // Convert to array with computed metrics
-    const campaignSummaries = Array.from(campaignMap.entries()).map(([name, data]) => ({
+    const rowSummaries = Array.from(rowMap.entries()).map(([name, data]) => ({
       name,
       spend: round(data.spend, 2),
       impressions: data.impressions,
@@ -392,42 +402,52 @@ serve(async (req) => {
       ctr: data.impressions > 0 ? round((data.clicks / data.impressions) * 100, 2) : null,
       cpc: data.clicks > 0 ? round(data.spend / data.clicks, 2) : null,
       cpa: data.results > 0 ? round(data.spend / data.results, 2) : null,
-      roas: data.spend > 0 ? round(data.revenue / data.spend, 2) : null,
+      roas: data.spend > 0 && data.revenue > 0 ? round(data.revenue / data.spend, 2) : null,
     }));
 
-    // Top 10 campaigns by spend
-    const topCampaigns = [...campaignSummaries]
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, 10);
-
-    // Worst 10 campaigns: highest CPA (where results > 0) or lowest ROAS
-    const worstCampaigns = [...campaignSummaries]
-      .filter(c => c.results && c.results > 0) // only campaigns with conversions
+    // Top performers (high ROAS or low CPA with significant spend)
+    const topPerformers = [...rowSummaries]
+      .filter(r => r.spend > (totalSpend / 100)) // Filter out tiny spenders
       .sort((a, b) => {
-        // Sort by CPA descending (worst first), fallback to ROAS ascending
-        if (a.cpa !== null && b.cpa !== null) return b.cpa - a.cpa;
-        if (a.roas !== null && b.roas !== null) return a.roas - b.roas;
-        return 0;
+         if (goal === 'purchases' && a.roas !== null && b.roas !== null) return b.roas - a.roas;
+         if (a.cpa !== null && b.cpa !== null) return a.cpa - b.cpa; // Lower CPA is better
+         return (b.ctr || 0) - (a.ctr || 0); // Fallback to CTR
       })
-      .slice(0, 10);
+      .slice(0, 5);
+
+    // Worst performers (High spend, low ROAS/High CPA)
+    const worstPerformers = [...rowSummaries]
+      .filter(r => r.spend > (totalSpend / 50)) // Only significant spenders
+      .sort((a, b) => {
+         if (goal === 'purchases' && a.roas !== null && b.roas !== null) return a.roas - b.roas; // Low ROAS is bad
+         if (a.cpa !== null && b.cpa !== null) return b.cpa - a.cpa; // High CPA is bad
+         return (a.ctr || 0) - (b.ctr || 0);
+      })
+      .slice(0, 5);
+
+    // Calculate average metrics for comparison
+    const avgCpa = rowSummaries.filter(r => r.cpa !== null).reduce((sum, r) => sum + (r.cpa || 0), 0) / rowSummaries.filter(r => r.cpa !== null).length || null;
+    const avgRoas = rowSummaries.filter(r => r.roas !== null).reduce((sum, r) => sum + (r.roas || 0), 0) / rowSummaries.filter(r => r.roas !== null).length || null;
 
     // Build compact analysis summary for Claude
     const analysisSummary = {
+      analysisLevel: nameCol || "unknown", // Tell Claude what level this is (Ad name, Ad set name, Campaign name)
       accountMetrics: {
         totalSpend: metrics.totalSpend,
         totalImpressions: metrics.totalImpressions,
         totalClicks: metrics.totalClicks,
-        totalResults: metrics.totalResults,
+        totalResults: goal === "purchases" ? totalPurchases : (goal === "leads" ? totalLeads : totalClicks),
         totalRevenue: metrics.totalRevenue,
         avgCtr: metrics.ctr,
         avgCpc: metrics.cpc,
-        avgCpa: metrics.cpa,
-        avgRoas: metrics.roas,
-        totalCampaigns: campaignSummaries.length,
+        avgCpa: avgCpa ? round(avgCpa, 2) : (metrics.cpp || metrics.cpl),
+        avgRoas: avgRoas ? round(avgRoas, 2) : metrics.roas,
+        totalEntities: rowSummaries.length,
         totalRows: dataRows.length,
+        goal: goal,
       },
-      topCampaigns,
-      worstCampaigns,
+      topPerformers, // Pass the granular rows
+      worstPerformers,
     };
 
     console.log('Analysis summary for Claude:', JSON.stringify(analysisSummary, null, 2));
