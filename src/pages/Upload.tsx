@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload as UploadIcon, FileText, ChevronLeft } from "lucide-react";
+import { Upload as UploadIcon, FileText, ChevronLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,6 +13,8 @@ const Upload = () => {
   const [platform, setPlatform] = useState<string>("");
   const [dataLevel, setDataLevel] = useState<string>("campaign");
   const [isDragging, setIsDragging] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -30,6 +32,7 @@ const Upload = () => {
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile?.type === "text/csv" || droppedFile?.name.endsWith(".csv")) {
       setFile(droppedFile);
+      setError(null);
     } else {
       toast({
         title: "Invalid file type",
@@ -43,10 +46,11 @@ const Upload = () => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
+      setError(null);
     }
   };
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (!file) {
       toast({
         title: "No file selected",
@@ -65,7 +69,44 @@ const Upload = () => {
       return;
     }
 
-    navigate("/processing");
+    setIsAnalyzing(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-csv`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.ok) {
+        navigate("/analysis", { 
+          state: { 
+            rowCount: data.rowCount, 
+            columnNames: data.columnNames,
+            platform,
+            dataLevel 
+          } 
+        });
+      } else {
+        setError(data.error || 'Failed to analyze CSV');
+      }
+    } catch (err) {
+      console.error('Error analyzing CSV:', err);
+      setError(err instanceof Error ? err.message : 'Failed to connect to server');
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -199,14 +240,28 @@ const Upload = () => {
             </div>
           </div>
 
+          {/* Error Display */}
+          {error && (
+            <div className="mt-6 p-4 rounded-lg bg-destructive/10 border border-destructive/20">
+              <p className="text-sm text-destructive font-medium">{error}</p>
+            </div>
+          )}
+
           {/* Action Button */}
           <Button
             onClick={handleAnalyze}
-            disabled={!file || !platform}
+            disabled={!file || !platform || isAnalyzing}
             className="w-full mt-8"
             size="lg"
           >
-            Analyze Data
+            {isAnalyzing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              'Analyze Data'
+            )}
           </Button>
         </Card>
       </main>
