@@ -10,11 +10,21 @@ interface Metrics {
   totalSpend: number | null;
   totalImpressions: number | null;
   totalClicks: number | null;
-  totalResults: number | null;
+  totalPurchases: number | null;
+  totalLeads: number | null;
+  totalRevenue: number | null;
   ctr: number | null;
   cpc: number | null;
-  cpa: number | null;
+  cpp: number | null;
+  cpl: number | null;
+  cpm: number | null;
   roas: number | null;
+  goal?: string;
+  primaryKpiKey?: string;
+  primaryKpiLabel?: string;
+  primaryKpiValue?: number | null;
+  resultsLabel?: string;
+  resultsValue?: number | null;
 }
 
 interface InsightItem {
@@ -65,6 +75,23 @@ const formatPercent = (value: number | null): string => {
 const formatRoas = (value: number | null): string => {
   if (value === null) return "—";
   return `${value.toFixed(2)}x`;
+};
+
+const formatPrimaryKpi = (value: number | null, kpiKey?: string): string => {
+  if (value === null || value === undefined) return "—";
+  
+  // Currency format for cost metrics
+  if (kpiKey === "cpl" || kpiKey === "cpp" || kpiKey === "cpc" || kpiKey === "cpm") {
+    return formatCurrency(value);
+  }
+  
+  // ROAS as plain number
+  if (kpiKey === "roas") {
+    return value.toFixed(2);
+  }
+  
+  // Default: number with 2 decimals
+  return value.toFixed(2);
 };
 
 const Analysis = () => {
@@ -178,9 +205,14 @@ const Analysis = () => {
               </Card>
 
               <Card className="p-4">
-                <p className="text-sm text-muted-foreground mb-1">CPA</p>
+                <p className="text-sm text-muted-foreground mb-1">
+                  {metrics?.primaryKpiLabel || "Primary KPI"}
+                </p>
                 <p className="text-2xl font-display font-bold text-foreground">
-                  {formatCurrency(metrics?.cpa ?? null)}
+                  {formatPrimaryKpi(
+                    metrics?.primaryKpiValue ?? (metrics?.primaryKpiKey ? (metrics as any)[metrics.primaryKpiKey] : null),
+                    metrics?.primaryKpiKey
+                  )}
                 </p>
               </Card>
 
