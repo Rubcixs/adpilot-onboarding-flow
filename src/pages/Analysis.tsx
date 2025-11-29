@@ -381,146 +381,157 @@ const Analysis = () => {
               </Card>
             ) : (
               <>
-                {/* 1. Funnel Health Section (Top) */}
-                {insights?.deepAnalysis?.funnelHealth && (
-                  <Card className={`p-6 border-l-4 ${insights.deepAnalysis.funnelHealth.status === 'Broken' ? 'border-l-destructive' : insights.deepAnalysis.funnelHealth.status === 'Warning' ? 'border-l-warning' : 'border-l-accent'}`}>
-                    <div className="flex items-start gap-4">
-                      <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <Activity className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className="font-display font-semibold text-foreground">
-                            {insights.deepAnalysis.funnelHealth.title}
-                          </h3>
-                          <Badge variant={insights.deepAnalysis.funnelHealth.status === 'Broken' ? 'destructive' : insights.deepAnalysis.funnelHealth.status === 'Warning' ? 'default' : 'default'}>
-                            {insights.deepAnalysis.funnelHealth.status}
-                          </Badge>
+                {/* MAIN DEEP DIVE - Always show if deepAnalysis exists */}
+                {insights?.deepAnalysis ? (
+                  <>
+                    {/* 1. Funnel Health */}
+                    {insights.deepAnalysis.funnelHealth && (
+                      <Card className={`p-6 border-l-4 ${
+                        insights.deepAnalysis.funnelHealth.status === 'Broken' 
+                          ? 'border-l-destructive' 
+                          : insights.deepAnalysis.funnelHealth.status === 'Warning' 
+                          ? 'border-l-warning' 
+                          : 'border-l-accent'
+                      }`}>
+                        <div className="flex items-start gap-4">
+                          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Activity className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-2">
+                              <h3 className="font-display font-semibold text-foreground">
+                                {insights.deepAnalysis.funnelHealth.title}
+                              </h3>
+                              <Badge variant={
+                                insights.deepAnalysis.funnelHealth.status === 'Broken' 
+                                  ? 'destructive' 
+                                  : 'default'
+                              }>
+                                {insights.deepAnalysis.funnelHealth.status}
+                              </Badge>
+                            </div>
+                            <p className="text-foreground leading-relaxed mb-3">
+                              {insights.deepAnalysis.funnelHealth.description}
+                            </p>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 p-2 rounded-md w-fit">
+                              <Target className="h-4 w-4" />
+                              <span>Fix Metric: <strong>{insights.deepAnalysis.funnelHealth.metricToWatch}</strong></span>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-foreground leading-relaxed mb-3">
-                          {insights.deepAnalysis.funnelHealth.description}
-                        </p>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 p-2 rounded-md w-fit">
-                          <Target className="h-4 w-4" />
-                          <span>Fix Metric: <strong>{insights.deepAnalysis.funnelHealth.metricToWatch}</strong></span>
+                      </Card>
+                    )}
+
+                    {/* 2. Financial Grid */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* Opportunities */}
+                      <Card className="p-6">
+                        <h3 className="font-display font-semibold text-accent mb-4 flex items-center gap-2">
+                          <TrendingUp className="h-5 w-5" />
+                          Profit Opportunities
+                        </h3>
+                        <div className="space-y-3">
+                          {insights.deepAnalysis.opportunities?.map((item, i) => (
+                            <div key={i} className="bg-accent/5 p-3 rounded-lg border border-accent/20">
+                              <p className="font-medium text-foreground text-sm mb-1">{item.title}</p>
+                              <p className="text-xs text-muted-foreground">{item.description}</p>
+                            </div>
+                          ))}
+                          {(!insights.deepAnalysis.opportunities || insights.deepAnalysis.opportunities.length === 0) && (
+                            <p className="text-sm text-muted-foreground">No specific opportunities found.</p>
+                          )}
                         </div>
-                      </div>
+                      </Card>
+
+                      {/* Money Wasters */}
+                      <Card className="p-6">
+                        <h3 className="font-display font-semibold text-destructive mb-4 flex items-center gap-2">
+                          <Banknote className="h-5 w-5" />
+                          Budget Leaks
+                        </h3>
+                        <div className="space-y-3">
+                          {insights.deepAnalysis.moneyWasters?.map((item, i) => (
+                            <div key={i} className="bg-destructive/5 p-3 rounded-lg border border-destructive/20">
+                              <p className="font-medium text-foreground text-sm mb-1">{item.title}</p>
+                              <p className="text-xs text-muted-foreground">{item.description}</p>
+                            </div>
+                          ))}
+                          {(!insights.deepAnalysis.moneyWasters || insights.deepAnalysis.moneyWasters.length === 0) && (
+                            <p className="text-sm text-muted-foreground">Budget spend looks efficient.</p>
+                          )}
+                        </div>
+                      </Card>
                     </div>
-                  </Card>
-                )}
 
-                {/* 2. Financial Grid (Middle) */}
-                {insights?.deepAnalysis && (
-                  <div className="grid md:grid-cols-2 gap-6">
-                    {/* Opportunities (Green) */}
-                    <Card className="p-6">
-                      <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2 text-accent">
-                        <TrendingUp className="h-5 w-5" />
-                        Profit Opportunities
-                      </h3>
-                      <div className="space-y-3">
-                        {insights.deepAnalysis.opportunities?.map((item, i) => (
-                          <div key={i} className="p-3 rounded-lg bg-accent/5 border border-accent/20">
-                            <p className="font-medium text-foreground text-sm mb-1">{item.title}</p>
-                            <p className="text-xs text-muted-foreground">{item.description}</p>
-                          </div>
-                        ))}
-                        {(!insights.deepAnalysis.opportunities || insights.deepAnalysis.opportunities.length === 0) && (
-                           <p className="text-sm text-muted-foreground">No immediate scaling opportunities detected.</p>
-                        )}
-                      </div>
-                    </Card>
-
-                    {/* Money Wasters (Red) */}
-                    <Card className="p-6">
-                      <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2 text-destructive">
-                        <Banknote className="h-5 w-5" />
-                        Budget Leaks
-                      </h3>
-                      <div className="space-y-3">
-                        {insights.deepAnalysis.moneyWasters?.map((item, i) => (
-                          <div key={i} className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-                            <p className="font-medium text-foreground text-sm mb-1">{item.title}</p>
-                            <p className="text-xs text-muted-foreground">{item.description}</p>
-                          </div>
-                        ))}
-                        {(!insights.deepAnalysis.moneyWasters || insights.deepAnalysis.moneyWasters.length === 0) && (
-                           <p className="text-sm text-muted-foreground">No major budget leaks detected.</p>
-                        )}
-                      </div>
-                    </Card>
+                    {/* 3. Creative Fatigue */}
+                    {insights.deepAnalysis.creativeFatigue && insights.deepAnalysis.creativeFatigue.length > 0 && (
+                      <Card className="p-6 border-warning/50 bg-warning/5">
+                        <h3 className="font-display font-semibold text-warning mb-4 flex items-center gap-2">
+                          <Megaphone className="h-5 w-5" />
+                          Creative Fatigue Warnings
+                        </h3>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          {insights.deepAnalysis.creativeFatigue.map((item, i) => (
+                            <div key={i} className="flex items-start gap-3">
+                              <div className="h-2 w-2 mt-2 rounded-full bg-warning flex-shrink-0" />
+                              <div>
+                                <p className="font-medium text-foreground text-sm">{item.title}</p>
+                                <p className="text-xs text-muted-foreground">{item.description}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </Card>
+                    )}
+                  </>
+                ) : (
+                  <div className="p-8 text-center border rounded-xl bg-muted/20">
+                    <AlertCircle className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-foreground font-medium">Detailed deep dive could not be generated from this data.</p>
+                    <p className="text-sm text-muted-foreground mt-1">The AI may need more complete metrics to generate insights.</p>
                   </div>
                 )}
 
-                {/* 3. Creative Fatigue (Bottom) */}
-                {insights?.deepAnalysis?.creativeFatigue && insights.deepAnalysis.creativeFatigue.length > 0 && (
-                  <Card className="p-6 border-warning/50 bg-warning/5">
-                    <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2 text-warning">
-                      <Megaphone className="h-5 w-5" />
-                      Creative Fatigue Warnings
-                    </h3>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {insights.deepAnalysis.creativeFatigue.map((item, i) => (
-                        <div key={i} className="flex items-start gap-3">
-                          <div className="h-2 w-2 mt-2 rounded-full bg-warning flex-shrink-0" />
-                          <div>
-                            <p className="font-medium text-foreground text-sm">{item.title}</p>
-                            <p className="text-xs text-muted-foreground">{item.description}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                )}
+                {/* SEGMENT ANALYSIS (Optional) - Only if data exists */}
+                {insights?.segmentAnalysis && (
+                  <div className="grid md:grid-cols-3 gap-6 mt-6 pt-6 border-t border-border">
+                    {/* Demographics */}
+                    <Card className="p-6">
+                      <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
+                        <Users className="h-4 w-4 text-primary" />
+                        Demographics
+                      </h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {insights.segmentAnalysis.demographics || "N/A"}
+                      </p>
+                    </Card>
 
-                {/* Fallback message when insights exist but deepAnalysis is missing */}
-                {!insights?.deepAnalysis && (
-                  <div className="text-center p-8 text-muted-foreground">
-                    <p className="mb-2">Deep analysis data is not available for this dataset.</p>
-                    <p className="text-sm">Try uploading a file with more detailed columns (Placement, Age, Gender).</p>
+                    {/* Placement */}
+                    <Card className="p-6">
+                      <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
+                        <Monitor className="h-4 w-4 text-blue-500" />
+                        Placements
+                      </h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {insights.segmentAnalysis.placement || "N/A"}
+                      </p>
+                    </Card>
+
+                    {/* Time */}
+                    <Card className="p-6">
+                      <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-orange-500" />
+                        Best Times
+                      </h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {insights.segmentAnalysis.time || "N/A"}
+                      </p>
+                    </Card>
                   </div>
                 )}
-
-                {/* 4. Segment Analysis (Demographics, Placement, Time) */}
-          {insights?.segmentAnalysis && (
-            <div className="grid md:grid-cols-3 gap-6">
-              {/* Demographics */}
-              <Card className="p-6">
-                <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
-                  <Users className="h-5 w-5 text-primary" />
-                  Demographics
-                </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {insights.segmentAnalysis.demographics || "No age/gender breakdown found in CSV."}
-                </p>
-              </Card>
-
-              {/* Placement */}
-              <Card className="p-6">
-                <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
-                  <Monitor className="h-5 w-5 text-blue-500" />
-                  Placements
-                </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {insights.segmentAnalysis.placement || "No placement breakdown found in CSV."}
-                </p>
-              </Card>
-
-              {/* Time / Day */}
-              <Card className="p-6">
-                <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
-                  <Calendar className="h-5 w-5 text-orange-500" />
-                  Best Times
-                </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  {insights.segmentAnalysis.time || "No daily breakdown found in CSV."}
-                </p>
-              </Card>
-            </div>
-          )}
-        </>
-      )}
-    </TabsContent>
+              </>
+            )}
+          </TabsContent>
 
           {/* Recommendations Tab */}
           <TabsContent value="recommendations" className="space-y-6">
