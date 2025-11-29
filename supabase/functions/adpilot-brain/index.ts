@@ -821,19 +821,35 @@ serve(async (req) => {
   }
 
   try {
-    const { type, data } = await req.json();
+    const { type, data, csvData } = await req.json();
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 
     if (!ANTHROPIC_API_KEY) {
       throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
-    let systemPrompt = SYSTEM_PROMPTS.csvAnalysis;
-    if (type === "media-plan") {
-      systemPrompt = SYSTEM_PROMPTS.mediaPlanGenerator;
-    } else if (type === "recommendations") {
-      systemPrompt = SYSTEM_PROMPTS.recommendations;
+    // Determine which system prompt to use based on whether CSV data is provided
+    let systemPrompt: string;
+    
+    if (csvData && csvData.trim().length > 0) {
+      // User has uploaded CSV data - use WITH_DATA prompt
+      console.log("Using ADPILOT_BRAIN_WITH_DATA system prompt");
+      systemPrompt = ADPILOT_BRAIN_WITH_DATA;
+    } else {
+      // No CSV data - use NO_DATA prompt
+      console.log("Using ADPILOT_BRAIN_NO_DATA system prompt");
+      systemPrompt = ADPILOT_BRAIN_NO_DATA;
     }
+
+    // Build the user message content
+    let userContent: string;
+    if (csvData && csvData.trim().length > 0) {
+      userContent = `CSV Data:\n${csvData}\n\nUser Inputs:\n${JSON.stringify(data, null, 2)}`;
+    } else {
+      userContent = JSON.stringify(data, null, 2);
+    }
+
+    console.log("Calling Claude API with model: claude-sonnet-4-20250514");
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -844,12 +860,12 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
+        max_tokens: 8192,
         system: systemPrompt,
         messages: [
           {
             role: "user",
-            content: JSON.stringify(data),
+            content: userContent,
           },
         ],
       }),
@@ -862,6 +878,7 @@ serve(async (req) => {
     }
 
     const result = await response.json();
+    console.log("Claude API response received successfully");
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
