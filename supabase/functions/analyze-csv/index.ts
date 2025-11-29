@@ -6,13 +6,11 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Get the form data with the CSV file
     const formData = await req.formData();
     const file = formData.get('file');
 
@@ -26,7 +24,6 @@ serve(async (req) => {
 
     console.log(`Received file: ${file.name}, size: ${file.size} bytes`);
 
-    // Read file content as text
     const csvText = await file.text();
     
     if (!csvText.trim()) {
@@ -37,7 +34,6 @@ serve(async (req) => {
       );
     }
 
-    // Parse CSV - split by newlines, handle both \n and \r\n
     const lines = csvText.split(/\r?\n/).filter(line => line.trim());
     
     if (lines.length === 0) {
@@ -48,15 +44,72 @@ serve(async (req) => {
       );
     }
 
-    // First line is headers
     const headerLine = lines[0];
     const columnNames = parseCSVLine(headerLine);
-    const rowCount = lines.length - 1; // Exclude header row
+    const rowCount = lines.length - 1;
 
     console.log(`Parsed CSV: ${rowCount} rows, columns: ${columnNames.join(', ')}`);
 
+    // Build column index map for quick lookup
+    const colIndex: Record<string, number> = {};
+    columnNames.forEach((name, idx) => {
+      colIndex[name.toLowerCase()] = idx;
+    });
+
+    // Define column mappings (lowercase for matching)
+    const spendCol = findColumn(colIndex, ['amount spent (eur)', 'amount spent', 'spend', 'cost']);
+    const impressionsCol = findColumn(colIndex, ['impressions']);
+    const clicksCol = findColumn(colIndex, ['clicks (all)', 'clicks', 'link clicks']);
+    const resultsCol = findColumn(colIndex, ['results', 'purchases', 'conversions']);
+    const revenueCol = findColumn(colIndex, ['purchases conversion value', 'conversion value', 'revenue', 'purchase value']);
+
+    // Parse data rows and compute sums
+    let totalSpend = 0;
+    let totalImpressions = 0;
+    let totalClicks = 0;
+    let totalResults = 0;
+    let totalRevenue = 0;
+
+    let hasSpend = spendCol !== null;
+    let hasImpressions = impressionsCol !== null;
+    let hasClicks = clicksCol !== null;
+    let hasResults = resultsCol !== null;
+    let hasRevenue = revenueCol !== null;
+
+    for (let i = 1; i < lines.length; i++) {
+      const row = parseCSVLine(lines[i]);
+      
+      if (hasSpend) totalSpend += parseNumber(row[spendCol!]);
+      if (hasImpressions) totalImpressions += parseNumber(row[impressionsCol!]);
+      if (hasClicks) totalClicks += parseNumber(row[clicksCol!]);
+      if (hasResults) totalResults += parseNumber(row[resultsCol!]);
+      if (hasRevenue) totalRevenue += parseNumber(row[revenueCol!]);
+    }
+
+    // Compute derived metrics
+    const metrics = {
+      totalSpend: hasSpend ? round(totalSpend, 2) : null,
+      totalImpressions: hasImpressions ? totalImpressions : null,
+      totalClicks: hasClicks ? totalClicks : null,
+      totalResults: hasResults ? totalResults : null,
+      ctr: (hasClicks && hasImpressions && totalImpressions > 0) 
+        ? round((totalClicks / totalImpressions) * 100, 2) 
+        : null,
+      cpc: (hasSpend && hasClicks && totalClicks > 0) 
+        ? round(totalSpend / totalClicks, 2) 
+        : null,
+      cpa: (hasSpend && hasResults && totalResults > 0) 
+        ? round(totalSpend / totalResults, 2) 
+        : null,
+      roas: (hasRevenue && hasSpend && totalSpend > 0) 
+        ? round(totalRevenue / totalSpend, 2) 
+        : null,
+    };
+
+    console.log('Computed metrics:', metrics);
+
     return new Response(
-      JSON.stringify({ ok: true, rowCount, columnNames }),
+      JSON.stringify({ ok: true, rowCount, columnNames, metrics }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
@@ -68,6 +121,29 @@ serve(async (req) => {
     );
   }
 });
+
+// Find column index by checking multiple possible names
+function findColumn(colIndex: Record<string, number>, possibleNames: string[]): number | null {
+  for (const name of possibleNames) {
+    if (colIndex[name] !== undefined) {
+      return colIndex[name];
+    }
+  }
+  return null;
+}
+
+// Parse a string to number, handling commas and empty values
+function parseNumber(value: string | undefined): number {
+  if (!value) return 0;
+  const cleaned = value.replace(/,/g, '.').replace(/[^\d.\-]/g, '');
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? 0 : num;
+}
+
+// Round to specified decimal places
+function round(value: number, decimals: number): number {
+  return Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
+}
 
 // Simple CSV line parser that handles quoted fields
 function parseCSVLine(line: string): string[] {
