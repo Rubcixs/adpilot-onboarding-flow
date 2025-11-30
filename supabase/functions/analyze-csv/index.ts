@@ -138,11 +138,46 @@ serve(async (req) => {
 
     console.log(`Column Detection: Spend=${spendCol}, Revenue=${revCol}, Purchases=${purchCol}, Leads=${leadsCol}, Results=${resultsCol}`);
 
-    // --- B. Aggregate Data ---
+    // --- B. Aggregate Data with Total Row Detection ---
+    // Step 1: Calculate tentative totals from all rows
+    let tentativeSpend = 0, tentativeImps = 0, tentativeClicks = 0;
+    
+    for (const row of csvData) {
+      tentativeSpend += spendCol ? toNumber(row[spendCol]) : 0;
+      tentativeImps += impsCol ? toNumber(row[impsCol]) : 0;
+      tentativeClicks += clicksCol ? toNumber(row[clicksCol]) : 0;
+    }
+    
+    // Step 2: Check if any single row matches the tentative totals (global total row)
+    let globalTotalRowIndex = -1;
+    const tolerance = 0.02; // 2% tolerance for rounding
+    
+    for (let i = 0; i < csvData.length; i++) {
+      const row = csvData[i];
+      const rowSpend = spendCol ? toNumber(row[spendCol]) : 0;
+      const rowImps = impsCol ? toNumber(row[impsCol]) : 0;
+      const rowClicks = clicksCol ? toNumber(row[clicksCol]) : 0;
+      
+      // Check if this row's values match tentative totals within tolerance
+      const spendMatch = tentativeSpend > 0 && Math.abs(rowSpend - tentativeSpend) / tentativeSpend < tolerance;
+      const impsMatch = tentativeImps > 0 && Math.abs(rowImps - tentativeImps) / tentativeImps < tolerance;
+      const clicksMatch = tentativeClicks > 0 && Math.abs(rowClicks - tentativeClicks) / tentativeClicks < tolerance;
+      
+      if (spendMatch && impsMatch && clicksMatch) {
+        globalTotalRowIndex = i;
+        console.log(`Detected global TOTAL row at index ${i}, excluding from calculations`);
+        break;
+      }
+    }
+    
+    // Step 3: Recalculate metrics excluding the global total row
     let totalSpend = 0, totalRev = 0, totalPurch = 0, totalLeads = 0, totalResults = 0, totalImps = 0, totalClicks = 0;
     const rowMap = new Map();
 
-    for (const row of csvData) {
+    for (let i = 0; i < csvData.length; i++) {
+      if (i === globalTotalRowIndex) continue; // Skip the global total row
+      
+      const row = csvData[i];
       const spend = spendCol ? toNumber(row[spendCol]) : 0;
       const rev = revCol ? toNumber(row[revCol]) : 0;
       const purch = purchCol ? toNumber(row[purchCol]) : 0;
