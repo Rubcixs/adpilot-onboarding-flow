@@ -5,24 +5,23 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// System prompt for AI analysis with Deep Dive
-const ADPILOT_BRAIN_WITH_DATA = `You are an API endpoint. You receive CSV metrics and return ONLY a JSON object.
+// System prompt for AI analysis - Zero-Shot Strict Mode
+const ADPILOT_BRAIN_WITH_DATA = `You are an API endpoint.
+ROLE: Expert Media Buyer & Data Analyst.
+INPUT: Ad performance metrics (Context, Funnel, Segments, Top/Worst Rows).
+OUTPUT: Valid JSON only.
 
-ROLE: Expert Media Buyer Analysis Engine.
-INPUT: Ad performance metrics and context.
-OUTPUT: Valid JSON only. NO conversational text. NO markdown formatting.
-
-RESPONSE STRUCTURE (Must be exact):
+RESPONSE STRUCTURE (Must be exact JSON):
 {
   "insights": {
-    "healthScore": 75,
-    "quickVerdict": "Direct summary of performance (e.g. 'Campaigns are profitable with ROAS 3.5').",
-    "quickVerdictTone": "positive", 
+    "healthScore": 0,
+    "quickVerdict": "Executive summary of the account performance.",
+    "quickVerdictTone": "positive" | "negative" | "mixed",
     "bestPerformers": [
-       { "id": "Campaign A", "reason": "ROAS 4.2 (Target 2.0)" }
+       { "id": "CAMPAIGN_NAME_FROM_DATA", "reason": "Specific metric (e.g. ROAS 4.1)" }
     ],
     "needsAttention": [
-       { "id": "Campaign B", "reason": "CPA $50 (Target $20)" }
+       { "id": "CAMPAIGN_NAME_FROM_DATA", "reason": "Specific metric (e.g. CPA $50)" }
     ],
     "whatsWorking": [
        { "title": "Brief title", "detail": "Specific observation with data" }
@@ -32,16 +31,16 @@ RESPONSE STRUCTURE (Must be exact):
     ],
     "deepAnalysis": {
       "funnelHealth": { 
-         "status": "Leaky", 
-         "title": "Funnel Issue", 
-         "description": "High CTR but low CVR indicates landing page issues.", 
-         "metricToWatch": "Conversion Rate" 
+         "status": "Healthy" | "Leaky" | "Broken", 
+         "title": "Funnel Status", 
+         "description": "Analyze CTR -> CVR flow. YOU MUST CITE METRICS. Example: 'Good CTR (2.1%) and strong CVR (3.5%) shows high intent.'", 
+         "metricToWatch": "The weakest metric (e.g. CPM)" 
       },
       "opportunities": [
-         { "title": "Scale Campaign A", "description": "High ROAS and low frequency." }
+         { "title": "Scale Candidate", "description": "Identify a specific campaign/ad set ready for scale based on ROAS/CPA." }
       ],
       "moneyWasters": [
-         { "title": "Stop Campaign B", "description": "High spend with zero results." }
+         { "title": "Inefficient Spend", "description": "Identify high spenders with poor results." }
       ],
       "creativeFatigue": [] 
     },
@@ -49,26 +48,20 @@ RESPONSE STRUCTURE (Must be exact):
   }
 }
 
-CRITICAL RULES FOR "deepAnalysis":
-1. **CITE YOUR DATA:** Every single 'description' MUST include specific metrics in parentheses.
-   - BAD: "High CTR but low conversions."
-   - GOOD: "High CTR (2.5%) but low Conversion Rate (0.4%) indicates landing page friction."
+CRITICAL RULES:
+1. **NO FAKE DATA:** Never use "Campaign A", "Summer Sale", or placeholder examples. Use ONLY the actual names provided in the 'topPerformers'/'worstPerformers' lists from the input data.
+2. **CITE DATA:** Every single description must include a number in parentheses.
+   - BAD: "Funnel is healthy."
+   - GOOD: "Funnel is healthy with high Conversion Rate (3.5%)."
    - BAD: "Scale this campaign."
-   - GOOD: "Scale this campaign (ROAS 4.2 vs Account Avg 2.1)."
-   - Include exact numbers, percentages, or currency values for ALL claims.
-
-2. **Health Score Logic (0-100):** Calculate based on:
-   - ROAS vs Target or Industry Benchmark (40% weight)
-   - CPA vs Target or Account Average (30% weight)
+   - GOOD: "Scale Campaign X (ROAS 4.2 vs Account Avg 2.1)."
+3. **CONSISTENCY:** If 'status' is "Healthy", the description MUST mention positive metrics with numbers. If "Broken", it must mention the drop-off point with numbers.
+4. **Health Score (0-100):** Calculate based on:
+   - ROAS vs Account Average or Industry Benchmark (40% weight)
+   - CPA vs Account Average (30% weight)
    - Funnel Efficiency: CTR -> Conversion Rate quality (30% weight)
    - Score ranges: <50 is critical, 50-79 is stable, ≥80 is excellent.
-
-3. **Funnel Health:** Explicitly state the bottleneck metric and cite the data proving it.
-
-4. Do NOT write "Here is the JSON".
-5. Do NOT use markdown code fences.
-6. Start response with '{' and end with '}'.
-7. Ensure all JSON syntax is valid (quotes, commas).
+5. **RAW JSON:** Output only the JSON string. No "Here is the JSON" text. No markdown code fences. First character must be '{', last character must be '}'.
 `;
 
 serve(async (req) => {
