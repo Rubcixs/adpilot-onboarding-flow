@@ -28,7 +28,7 @@ const Upload = () => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile?.type === "text/csv" || droppedFile?.name.endsWith(".csv")) {
       setFile(droppedFile);
@@ -74,38 +74,35 @@ const Upload = () => {
 
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append("file", file);
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-csv`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: formData,
-        }
-      );
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-csv`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: formData,
+      });
 
       const data = await response.json();
 
       if (data.ok) {
-        navigate("/analysis", { 
-          state: { 
-            rowCount: data.rowCount, 
+        navigate("/analysis", {
+          state: {
+            rowCount: data.rowCount,
             columnNames: data.columnNames,
             metrics: data.metrics,
             aiInsights: data.aiInsights,
             platform,
-            dataLevel 
-          } 
+            dataLevel,
+          },
         });
       } else {
-        setError(data.error || 'Failed to analyze CSV');
+        setError(data.error || "Failed to analyze CSV");
       }
     } catch (err) {
-      console.error('Error analyzing CSV:', err);
-      setError(err instanceof Error ? err.message : 'Failed to connect to server');
+      console.error("Error analyzing CSV:", err);
+      setError(err instanceof Error ? err.message : "Failed to connect to server");
     } finally {
       setIsAnalyzing(false);
     }
@@ -117,19 +114,13 @@ const Upload = () => {
       <header className="border-b border-border bg-card/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <Button
-              variant="ghost"
-              onClick={() => navigate("/")}
-              className="gap-2"
-            >
+            <Button variant="ghost" onClick={() => navigate("/")} className="gap-2">
               <ChevronLeft className="h-4 w-4" />
               Back
             </Button>
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-lg bg-gradient-primary" />
-              <span className="text-xl font-display font-semibold text-foreground">
-                AdPilot
-              </span>
+              <span className="text-xl font-display font-semibold text-foreground">AdPilot</span>
             </div>
             <div className="w-20" /> {/* Spacer for alignment */}
           </div>
@@ -138,12 +129,8 @@ const Upload = () => {
 
       <main className="container mx-auto px-4 py-12 max-w-3xl">
         <div className="text-center mb-8 animate-fade-in">
-          <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-3">
-            Upload Your Ad Data
-          </h1>
-          <p className="text-muted-foreground">
-            Upload a CSV file from your ad platform to get instant insights
-          </p>
+          <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-3">Upload Your Ad Data</h1>
+          <p className="text-muted-foreground">Upload a CSV file from your ad platform to get instant insights</p>
         </div>
 
         <Card className="p-8">
@@ -153,8 +140,8 @@ const Upload = () => {
               isDragging
                 ? "border-primary bg-primary/5"
                 : file
-                ? "border-accent bg-accent/5"
-                : "border-border hover:border-primary/50 hover:bg-primary/5"
+                  ? "border-accent bg-accent/5"
+                  : "border-border hover:border-primary/50 hover:bg-primary/5"
             }`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -174,9 +161,7 @@ const Upload = () => {
                 </div>
                 <div>
                   <p className="font-medium text-foreground mb-1">{file.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {(file.size / 1024).toFixed(2)} KB
-                  </p>
+                  <p className="text-sm text-muted-foreground">{(file.size / 1024).toFixed(2)} KB</p>
                 </div>
                 <Button
                   variant="outline"
@@ -195,12 +180,8 @@ const Upload = () => {
                   <UploadIcon className="h-8 w-8 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium text-foreground mb-1">
-                    Drop your CSV file here
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    or click to browse
-                  </p>
+                  <p className="font-medium text-foreground mb-1">Drop your CSV file here</p>
+                  <p className="text-sm text-muted-foreground">or click to browse</p>
                 </div>
               </div>
             )}
@@ -209,9 +190,7 @@ const Upload = () => {
           {/* Platform Selection */}
           <div className="mt-8 space-y-6">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Ad Platform *
-              </label>
+              <label className="block text-sm font-medium text-foreground mb-2">Ad Platform *</label>
               <Select value={platform} onValueChange={setPlatform}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select your ad platform" />
@@ -226,9 +205,7 @@ const Upload = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Data Level (Optional)
-              </label>
+              <label className="block text-sm font-medium text-foreground mb-2">Data Level (Optional)</label>
               <Select value={dataLevel} onValueChange={setDataLevel}>
                 <SelectTrigger>
                   <SelectValue />
@@ -262,7 +239,7 @@ const Upload = () => {
                 Analyzing...
               </>
             ) : (
-              'Analyze Data'
+              "Analyze Data"
             )}
           </Button>
         </Card>
