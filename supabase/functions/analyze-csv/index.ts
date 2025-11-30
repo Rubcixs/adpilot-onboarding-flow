@@ -90,36 +90,58 @@ serve(async (req) => {
     const openAiKey = Deno.env.get('OPENAI_API_KEY')
     console.log(`Analyzing ${file.name} (${csvData.length} rows)`);
 
-    // --- A. Detect Columns ---
+    // --- A. Detect Columns (ULTRA-ROBUST REGEX) ---
+    // Note: The logic searches for key terms in column headers, prioritizing English names which are most common in FB/Google Ads exports.
     const headers = Object.keys(csvData[0]).map(h => h.trim());
-    const spendCol = headers.find(h => /Amount spent|Cost|Spend/i.test(h));
-    const purchCol = headers.find(h => /Purchases|Results/i.test(h));
-    const revCol = headers.find(h => /ROAS|Conversion value|Revenue/i.test(h));
-    const nameCol = headers.find(h => /Ad name|Ad set name|Campaign name/i.test(h));
     
+    const columnTests = {
+      spend: /spend|cost|amount|iztērēts|tēriņi|summa|budžets/i,
+      revenue: /revenue|conversion value|purchase value|ienākumi|peļņa|vērtība/i,
+      purchases: /purchases|results|conversions|actions|pirkumi|rezultāti/i,
+      impressions: /impressions|parādīšanas|tiem|skatījumi/i,
+      clicks: /clicks|klikšķi|saites klikšķi/i,
+      name: /ad name|ad set name|campaign name|nosaukums|kampaņa/i,
+    };
+
+    const spendCol = headers.find(h => columnTests.spend.test(h));
+    const revCol = headers.find(h => columnTests.revenue.test(h));
+    const purchCol = headers.find(h => columnTests.purchases.test(h));
+    const impsCol = headers.find(h => columnTests.impressions.test(h));
+    const clicksCol = headers.find(h => columnTests.clicks.test(h));
+    const nameCol = headers.find(h => columnTests.name.test(h) && !/status|goals|budget/i.test(h)); // Exclude generic matches
+
+    if (!spendCol || !revCol || !purchCol) {
+        console.error("CRITICAL: One or more main metrics not found. Analysis will be based on 0.");
+    }
+
     // --- B. Aggregate Data ---
-    let totalSpend = 0, totalRev = 0, totalPurch = 0;
+    let totalSpend = 0, totalRev = 0, totalPurch = 0, totalImps = 0, totalClicks = 0;
     const rowMap = new Map();
 
     for (const row of csvData) {
       const spend = spendCol ? toNumber(row[spendCol]) : 0;
       const rev = revCol ? toNumber(row[revCol]) : 0;
       const purch = purchCol ? toNumber(row[purchCol]) : 0;
+      const imps = impsCol ? toNumber(row[impsCol]) : 0;
+      const clicks = clicksCol ? toNumber(row[clicksCol]) : 0;
       
       totalSpend += spend;
       totalRev += rev;
       totalPurch += purch;
+      totalImps += imps;
+      totalClicks += clicks;
 
       if (nameCol) {
         const name = String(row[nameCol] || "Unknown").trim();
         if (name) {
-           const e = rowMap.get(name) || { spend: 0, results: 0, revenue: 0 };
-           e.spend += spend; e.results += purch; e.revenue += rev;
-           rowMap.set(name, e);
+            const e = rowMap.get(name) || { spend: 0, results: 0, revenue: 0 };
+            e.spend += spend; e.results += purch; e.revenue += rev;
+            rowMap.set(name, e);
         }
       }
     }
-
+    
+    // Rows calculation (Top/Worst logic remains below this point, using new totals)
     const rows = Array.from(rowMap.entries()).map(([name, d]) => ({
         name,
         spend: round(d.spend),
@@ -127,7 +149,7 @@ serve(async (req) => {
         cpa: d.results > 0 ? round(d.spend / d.results) : 0
     }));
 
-    // --- C. Construct AI Payload ---
+    // --- C. Construct AI Payload (Metrics are now correctly calculated) ---
     const analysisSummary = {
       metrics: {
         spend: round(totalSpend),
@@ -136,7 +158,7 @@ serve(async (req) => {
       },
       topPerformers: rows.filter(r => r.spend > 0).sort((a,b) => b.roas - a.roas).slice(0, 3),
       worstPerformers: rows.filter(r => r.spend > 0).sort((a,b) => b.cpa - a.cpa).slice(0, 3),
-      segments: null // Disable segments for stability
+      segments: null
     };
 
     // --- D. Call AI (with Math Fallback) ---
