@@ -54,6 +54,8 @@ interface AIInsights {
     quickVerdictTone: "positive" | "negative" | "mixed";
     bestPerformers: { id: string; reason: string }[];
     needsAttention: { id: string; reason: string }[];
+    whatsWorking?: { title: string; detail: string }[];
+    whatsNotWorking?: { title: string; detail: string }[];
     deepAnalysis?: {
       funnelHealth: { status: string; title: string; description: string; metricToWatch: string };
       opportunities: { title: string; description: string; impact?: string }[];
@@ -448,6 +450,46 @@ const Analysis = () => {
                         </div>
                       </Card>
                     )}
+
+                    {/* What's Working / What's Not Working */}
+                    {(insights.whatsWorking && insights.whatsWorking.length > 0) || 
+                     (insights.whatsNotWorking && insights.whatsNotWorking.length > 0) ? (
+                      <div className="grid md:grid-cols-2 gap-6">
+                        {/* What's Working */}
+                        {insights.whatsWorking && insights.whatsWorking.length > 0 && (
+                          <Card className="p-6 border-l-4 border-l-accent">
+                            <h3 className="font-semibold text-accent flex items-center gap-2 mb-4">
+                              <CheckCircle2 className="h-5 w-5" /> What's Working
+                            </h3>
+                            <div className="space-y-3">
+                              {insights.whatsWorking.map((item, i) => (
+                                <div key={i} className="bg-accent/5 p-3 rounded-lg">
+                                  <p className="font-medium text-sm text-foreground mb-1">{item.title}</p>
+                                  <p className="text-xs text-muted-foreground">{item.detail}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </Card>
+                        )}
+
+                        {/* What's Not Working */}
+                        {insights.whatsNotWorking && insights.whatsNotWorking.length > 0 && (
+                          <Card className="p-6 border-l-4 border-l-warning">
+                            <h3 className="font-semibold text-warning flex items-center gap-2 mb-4">
+                              <AlertCircle className="h-5 w-5" /> What's Not Working
+                            </h3>
+                            <div className="space-y-3">
+                              {insights.whatsNotWorking.map((item, i) => (
+                                <div key={i} className="bg-warning/5 p-3 rounded-lg">
+                                  <p className="font-medium text-sm text-foreground mb-1">{item.title}</p>
+                                  <p className="text-xs text-muted-foreground">{item.detail}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </Card>
+                        )}
+                      </div>
+                    ) : null}
 
                     {/* SEGMENT TRENDS (Only if real data exists) */}
                     {insights.segmentAnalysis && (

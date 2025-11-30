@@ -87,34 +87,58 @@ Priority: objective column → data-based inference (purchases > leads > traffic
 Never return Infinity or NaN. When denominator is 0, set metric to null.
 NO EXTRA TEXT. ONLY JSON.`;
 
-// 4. STRICT AI INSIGHTS PROMPT
-const ADPILOT_BRAIN_WITH_DATA = `You are an API endpoint. 
-ROLE: Data Analyst.
-INPUT: Ad metrics.
-OUTPUT: Valid JSON only.
+// 4. COMPREHENSIVE AI INSIGHTS PROMPT
+const ADPILOT_INSIGHTS_SYSTEM = `You are an expert performance marketer and media buyer.
+You receive:
+- Aggregated performance metrics for one ad account (metrics object).
+- CSV structure info (columnNames, rowCount) and optionally a small sample of rows.
 
-RESPONSE STRUCTURE:
+Your job is to return a JSON object in a fixed schema called AIInsights that will be parsed directly by the UI.
+Do not add explanations, markdown or prose outside the JSON.
+Only output valid JSON.
+
+Return your answer in **exactly** this JSON schema:
+
 {
   "insights": {
-    "healthScore": 0, // 0-100
-    "quickVerdict": "Summary string.",
-    "quickVerdictTone": "positive" | "negative" | "mixed",
-    "bestPerformers": [ { "id": "NAME", "reason": "ROAS 4.x" } ],
-    "needsAttention": [ { "id": "NAME", "reason": "CPA $50" } ],
+    "healthScore": number,
+    "quickVerdict": "string",
+    "quickVerdictTone": "positive | negative | mixed",
+    "bestPerformers": [{ "id": "string", "reason": "string" }],
+    "needsAttention": [{ "id": "string", "reason": "string" }],
+    "whatsWorking": [{ "title": "string", "detail": "string" }],
+    "whatsNotWorking": [{ "title": "string", "detail": "string" }],
     "deepAnalysis": {
-      "funnelHealth": { "status": "Healthy"|"Broken", "title": "Funnel", "description": "Analysis...", "metricToWatch": "CVR" },
-      "opportunities": [ { "title": "Scale", "description": "...", "impact": "High" } ],
-      "moneyWasters": [ { "title": "Pause", "description": "...", "impact": "High" } ],
-      "creativeFatigue": []
+      "funnelHealth": {
+        "status": "Healthy | Warning | Broken",
+        "title": "string",
+        "description": "string",
+        "metricToWatch": "string"
+      },
+      "opportunities": [{ "title": "string", "description": "string" }],
+      "moneyWasters": [{ "title": "string", "description": "string" }],
+      "creativeFatigue": [{ "title": "string", "description": "string" }]
     },
-    "segmentAnalysis": null 
+    "segmentAnalysis": {
+      "demographics": { "title": "string", "finding": "string" },
+      "placement": { "title": "string", "finding": "string" },
+      "time": { "title": "string", "finding": "string" }
+    }
   }
 }
 
-RULES:
-1. NO FAKE DATA. Use input names only.
-2. RAW JSON ONLY. No markdown.
-`;
+Tasks:
+1) Evaluate overall account health on a scale 0–100 → healthScore.
+2) Write a short, human-readable one-sentence verdict → quickVerdict with quickVerdictTone.
+3) Identify 3–5 best performers → bestPerformers with id and reason.
+4) Identify 3–5 items that need attention → needsAttention with id and reason.
+5) Fill whatsWorking and whatsNotWorking: arrays of {title, detail} objects.
+6) Fill deepAnalysis with funnelHealth, opportunities, moneyWasters, creativeFatigue.
+7) Fill segmentAnalysis if segment data is available, otherwise state "data not segmented".
+
+Output only the JSON, nothing else.`;
+
+// 5. STRICT AI INSIGHTS PROMPT
 
 // 5. AI-Powered Metrics Detection Function
 async function detectMetricsWithAI(csvData: any[], columnNames: string[]): Promise<any> {
@@ -714,7 +738,8 @@ serve(async (req) => {
       };
     }
 
-    // Rows calculation for AI insights
+    // --- G. Prepare AI Context (metrics + CSV structure + sample rows) ---
+    // Calculate rows for AI analysis
     const rows = Array.from(rowMap.entries()).map(([name, d]) => ({
         name,
         spend: round(d.spend),
@@ -722,23 +747,70 @@ serve(async (req) => {
         cpa: d.results > 0 ? round(d.spend / d.results) : 0
     }));
 
-    const analysisSummary = {
+    const sampleRows = csvData.slice(0, 5).map(row => {
+      const sample: any = {};
+      if (nameCol) sample.name = row[nameCol];
+      if (spendCol) sample.spend = toNumber(row[spendCol]);
+      if (purchCol) sample.purchases = toNumber(row[purchCol]);
+      if (leadsCol) sample.leads = toNumber(row[leadsCol]);
+      if (revCol) sample.revenue = toNumber(row[revCol]);
+      return sample;
+    });
+
+    const aiContext = {
       metrics: {
-        spend: round(totalSpend),
-        roas: roas || 0,
-        cpa: cpp || 0
+        totalSpend: metrics.totalSpend,
+        totalImpressions: metrics.totalImpressions,
+        totalClicks: metrics.totalClicks,
+        totalPurchases: metrics.totalPurchases,
+        totalLeads: metrics.totalLeads,
+        totalRevenue: metrics.totalRevenue,
+        ctr: metrics.ctr,
+        cpc: metrics.cpc,
+        cpp: metrics.cpp,
+        cpl: metrics.cpl,
+        cpm: metrics.cpm,
+        roas: metrics.roas,
+        goal: metrics.goal,
+        primaryKpi: metrics.primaryKpiLabel,
+        primaryKpiValue: metrics.primaryKpiValue
       },
-      topPerformers: rows.filter(r => r.spend > 0).sort((a,b) => b.roas - a.roas).slice(0, 3),
-      worstPerformers: rows.filter(r => r.spend > 0).sort((a,b) => b.cpa - a.cpa).slice(0, 3),
-      segments: null
+      csvSummary: {
+        rowCount: csvData.length,
+        columnNames: Object.keys(csvData[0] || {}),
+        sampleRows: sampleRows
+      },
+      topPerformers: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.roas - a.roas).slice(0, 5),
+      worstPerformers: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.cpa - a.cpa).slice(0, 5)
     };
 
-    // --- D. Call AI (with Math Fallback) ---
+    const userPrompt = `Here is the input data for the ad account:
+
+METRICS (already aggregated):
+${JSON.stringify(aiContext.metrics, null, 2)}
+
+CSV SUMMARY:
+- Row count: ${aiContext.csvSummary.rowCount}
+- Columns: ${aiContext.csvSummary.columnNames.join(', ')}
+
+SAMPLE ROWS (first 5):
+${JSON.stringify(aiContext.csvSummary.sampleRows, null, 2)}
+
+TOP PERFORMERS:
+${JSON.stringify(aiContext.topPerformers, null, 2)}
+
+WORST PERFORMERS:
+${JSON.stringify(aiContext.worstPerformers, null, 2)}
+
+Analyze this data and return the complete AIInsights JSON object.`;
+
+    // --- H. Call AI (with Math Fallback) ---
     let aiInsights = null;
     
     try {
       if (!openAiKey) throw new Error("No API Key");
 
+      console.log('Calling Claude API for insights...');
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -747,53 +819,90 @@ serve(async (req) => {
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'claude-3-haiku-20240307',
-          max_tokens: 1500,
+          model: 'claude-sonnet-4-5',
+          max_tokens: 4000,
           temperature: 0,
-          system: ADPILOT_BRAIN_WITH_DATA,
-          messages: [{ role: 'user', content: JSON.stringify(analysisSummary) }]
+          system: ADPILOT_INSIGHTS_SYSTEM,
+          messages: [{ role: 'user', content: userPrompt }]
         }),
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Claude API error:', response.status, errorText);
+        throw new Error(`Claude API failed: ${response.status}`);
+      }
+
       const aiData = await response.json();
       if (aiData.content && aiData.content[0]?.text) {
-         aiInsights = JSON.parse(cleanJson(aiData.content[0].text));
+         const cleanedText = cleanJson(aiData.content[0].text);
+         aiInsights = JSON.parse(cleanedText);
+         console.log('✅ AI Insights generated successfully');
       }
     } catch (e) {
       console.error("AI Error:", e);
+      console.log("Using Smart Fallback");
       // SILENT FAIL - Do not show "Failed". Generate Math Insights instead.
     }
 
-    // --- E. "Smart Fallback" (If AI failed, generate basic insights) ---
+    // --- I. "Smart Fallback" (If AI failed, generate basic insights) ---
     if (!aiInsights || !aiInsights.insights) {
-       console.log("Using Smart Fallback");
-       const roas = analysisSummary.metrics.roas;
-       const isGood = roas > 2;
+       console.log("Generating fallback insights...");
+       const roasValue = metrics.roas || 0;
+       const isGood = roasValue > 2;
        
        aiInsights = {
          insights: {
            healthScore: isGood ? 80 : 40,
-           quickVerdict: isGood ? `Healthy account with strong ROAS (${roas}x).` : `Performance is struggling (ROAS ${roas}x). Needs optimization.`,
+           quickVerdict: isGood 
+             ? `Strong performance with ${roasValue.toFixed(2)}x ROAS. Account is healthy and scaling efficiently.`
+             : `Performance needs optimization. Current ROAS of ${roasValue.toFixed(2)}x is below target.`,
            quickVerdictTone: isGood ? "positive" : "negative",
-           bestPerformers: analysisSummary.topPerformers.map(p => ({ id: p.name, reason: `ROAS ${p.roas}x` })),
-           needsAttention: analysisSummary.worstPerformers.map(p => ({ id: p.name, reason: `CPA $${p.cpa}` })),
+           bestPerformers: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.roas - a.roas).slice(0, 3)
+             .map((p: any) => ({ id: p.name, reason: `Strong ROAS of ${p.roas.toFixed(2)}x` })),
+           needsAttention: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.cpa - a.cpa).slice(0, 3)
+             .map((p: any) => ({ id: p.name, reason: `High CPA of €${p.cpa.toFixed(2)}` })),
+           whatsWorking: isGood ? [
+             { title: "Strong ROAS", detail: `Account achieving ${roasValue.toFixed(2)}x return on ad spend, indicating efficient targeting.` },
+             { title: "Conversion Efficiency", detail: "Top campaigns are converting at healthy rates with manageable acquisition costs." }
+           ] : [],
+           whatsNotWorking: !isGood ? [
+             { title: "Low ROAS", detail: `Current ${roasValue.toFixed(2)}x ROAS is below the 2.0x benchmark for profitable campaigns.` },
+             { title: "High Acquisition Costs", detail: "Cost per acquisition is elevated, suggesting targeting or creative optimization needed." }
+           ] : [],
            deepAnalysis: {
              funnelHealth: { 
-                status: isGood ? "Healthy" : "Leaky", 
-                title: "Funnel Status", 
-                description: isGood ? "Conversion efficiency is stable." : "High costs indicate funnel leakage.", 
-                metricToWatch: "ROAS" 
+                status: isGood ? "Healthy" : "Warning", 
+                title: "Conversion Funnel", 
+                description: isGood 
+                  ? "Funnel is converting efficiently with strong metrics across the board."
+                  : "Funnel shows leakage with elevated costs. Focus on improving conversion rates and reducing drop-off.", 
+                metricToWatch: metrics.primaryKpiKey?.toUpperCase() || "ROAS"
              },
-             opportunities: [],
-             moneyWasters: [],
-             creativeFatigue: []
+             opportunities: isGood ? [
+               { title: "Scale Top Performers", description: "Increase budget on best-performing campaigns to maximize returns." },
+               { title: "Test New Audiences", description: "Expand to lookalike audiences based on converter profiles." }
+             ] : [
+               { title: "Optimize Targeting", description: "Refine audience targeting to reduce wasted spend on non-converters." }
+             ],
+             moneyWasters: !isGood ? [
+               { title: "Underperforming Campaigns", description: "Several campaigns show poor ROAS and should be paused or restructured." },
+               { title: "High CPA Segments", description: "Identify and exclude high-cost, low-converting audience segments." }
+             ] : [],
+             creativeFatigue: [
+               { title: "Creative Refresh Needed", description: "Insufficient data to determine creative fatigue. Monitor CTR trends over time." }
+             ]
            },
-           segmentAnalysis: null
+           segmentAnalysis: {
+             demographics: { title: "Demographics", finding: "Demographic breakdown not available in current dataset." },
+             placement: { title: "Placement", finding: "Placement data not segmented in this export." },
+             time: { title: "Timing", finding: "Time-based performance patterns not available." }
+           }
          }
        };
     }
 
-    // --- F. Final Response ---
+    // --- J. Final Response ---
     const finalResponse = {
        ok: true,
        rowCount: csvData.length,
