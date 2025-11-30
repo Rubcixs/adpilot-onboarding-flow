@@ -77,16 +77,6 @@ interface LocationState {
   aiInsights?: AIInsights | null;
 }
 
-interface LocationState {
-  rowCount?: number;
-  columnNames?: string[];
-  platform?: string;
-  dataLevel?: string;
-  metrics?: Metrics;
-  aiInsights?: AIInsights | null;
-  aiInsightsError?: string | null;
-}
-
 // Formatting helpers
 const formatCurrency = (value: number | null): string => {
   if (value === null) return "—";
@@ -138,13 +128,10 @@ const Analysis = () => {
   const state = location.state as LocationState | null;
   const metrics = state?.metrics;
   const aiInsights = state?.aiInsights;
-  const aiInsightsError = state?.aiInsightsError;
-
+  
   // Use insights directly from navigation state
   const insights = aiInsights?.insights;
   const hasAiInsights = !!insights;
-  const whatsWorking = insights?.whatsWorking || [];
-  const whatsNotWorking = insights?.whatsNotWorking || [];
 
   // Format primary KPI for display (simple version without Campaign type)
 
@@ -405,7 +392,7 @@ const Analysis = () => {
 
           {/* Insights Tab - Deep Dive Dashboard */}
           <TabsContent value="insights" className="space-y-6">
-            {!hasAiInsights ? (
+            {!aiInsights ? (
               <Card className="p-8 text-center">
                 <div className="flex flex-col items-center gap-4">
                   <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
@@ -413,12 +400,12 @@ const Analysis = () => {
                   </div>
                   <div>
                     <h3 className="font-display font-semibold text-foreground mb-2">
-                      {aiInsightsError ? "Failed to Load Insights" : "Analyzing Data..."}
+                      Failed to Load Insights
                     </h3>
                     <p className="text-muted-foreground max-w-md">
-                      {aiInsightsError || "Please wait while we generate your deep dive analysis."}
+                      The AI analysis could not be completed. Please ensure your environment variables are configured correctly.
                     </p>
-                  </div>
+                </div>
                 </div>
               </Card>
             ) : (
@@ -552,125 +539,85 @@ const Analysis = () => {
           <TabsContent value="recommendations" className="space-y-6">
             <Card className="p-6">
               <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
-                <Lightbulb className="h-5 w-5 text-accent" />
-                Quick Wins
+                <TrendingUp className="h-5 w-5 text-accent" />
+                Scaling Opportunities
               </h3>
               <div className="space-y-4">
-                {[
-                  {
-                    title: "Increase retargeting budget by 30%",
-                    impact: "High",
-                    effort: "Low",
-                    description:
-                      "Your retargeting campaigns have the highest ROAS. Reallocate budget from underperforming broad campaigns.",
-                  },
-                  {
-                    title: "Pause or refresh static image ads",
-                    impact: "Medium",
-                    effort: "Low",
-                    description:
-                      "Static creatives showing ad fatigue. Either create new variations or shift budget to video.",
-                  },
-                  {
-                    title: "Add mobile-specific landing pages",
-                    impact: "High",
-                    effort: "Medium",
-                    description:
-                      "Mobile traffic is strong but could convert better with optimized mobile landing experiences.",
-                  },
-                ].map((rec, i) => (
-                  <div key={i} className="p-4 rounded-lg border border-border bg-card">
+                {insights?.deepAnalysis?.opportunities?.map((rec, i) => (
+                  <div key={i} className="p-4 rounded-lg border border-accent/20 bg-accent/5">
                     <div className="flex items-start justify-between mb-2">
                       <p className="font-medium text-foreground">{rec.title}</p>
                       <div className="flex gap-2">
-                        <Badge className="bg-accent/10 text-accent border-accent/20">Impact: {rec.impact}</Badge>
-                        <Badge variant="outline">Effort: {rec.effort}</Badge>
+                        <Badge className="bg-accent/10 text-accent border-accent/20">
+                          Impact: {rec.impact || 'High'}
+                        </Badge>
                       </div>
                     </div>
                     <p className="text-sm text-muted-foreground">{rec.description}</p>
                   </div>
                 ))}
+                {!insights?.deepAnalysis?.opportunities?.length && (
+                  <p className="text-muted-foreground text-sm py-2">
+                    No immediate scaling opportunities found by the AI.
+                  </p>
+                )}
               </div>
             </Card>
 
             <Card className="p-6">
-              <h3 className="font-display font-semibold text-foreground mb-4">Structural Changes</h3>
+              <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
+                <Banknote className="h-5 w-5 text-destructive" />
+                Budget Leaks & Money Wasters
+              </h3>
               <div className="space-y-4">
-                {[
-                  {
-                    title: "Implement audience exclusions to reduce overlap",
-                    impact: "High",
-                    effort: "Medium",
-                    description:
-                      "Prevent your retargeting and prospecting campaigns from competing for the same users.",
-                  },
-                  {
-                    title: "Create lookalike audiences from best customers",
-                    impact: "High",
-                    effort: "Medium",
-                    description:
-                      "Build 1-2% lookalikes from your highest LTV customers to improve cold acquisition efficiency.",
-                  },
-                ].map((rec, i) => (
-                  <div key={i} className="p-4 rounded-lg border border-border bg-card">
+                {insights?.deepAnalysis?.moneyWasters?.map((rec, i) => (
+                  <div key={i} className="p-4 rounded-lg border border-destructive/20 bg-destructive/5">
                     <div className="flex items-start justify-between mb-2">
                       <p className="font-medium text-foreground">{rec.title}</p>
                       <div className="flex gap-2">
-                        <Badge className="bg-primary/10 text-primary border-primary/20">Impact: {rec.impact}</Badge>
-                        <Badge variant="outline">Effort: {rec.effort}</Badge>
+                        <Badge className="bg-destructive/10 text-destructive border-destructive/20">
+                          Impact: {rec.impact || 'Savings'}
+                        </Badge>
                       </div>
                     </div>
                     <p className="text-sm text-muted-foreground">{rec.description}</p>
                   </div>
                 ))}
+                {!insights?.deepAnalysis?.moneyWasters?.length && (
+                  <p className="text-muted-foreground text-sm py-2">
+                    Budget utilization looks highly efficient.
+                  </p>
+                )}
               </div>
             </Card>
 
             <Card className="p-6">
-              <h3 className="font-display font-semibold text-foreground mb-4">Creative Ideas & Tests</h3>
+              <h3 className="font-display font-semibold text-foreground mb-4 flex items-center gap-2">
+                <Lightbulb className="h-5 w-5 text-primary" />
+                Creative Ideas & Fatigue
+              </h3>
               <div className="space-y-4">
-                {[
-                  {
-                    title: "Test user-generated content (UGC) style videos",
-                    impact: "Medium",
-                    effort: "High",
-                    description:
-                      "Authentic, UGC-style content often outperforms polished brand content, especially on TikTok and Instagram.",
-                  },
-                  {
-                    title: "A/B test different video lengths (15s vs 30s vs 60s)",
-                    impact: "Medium",
-                    effort: "Medium",
-                    description: "Find the optimal video length for your audience and placement mix.",
-                  },
-                ].map((rec, i) => (
+                {insights?.deepAnalysis?.creativeFatigue?.map((rec, i) => (
                   <div key={i} className="p-4 rounded-lg border border-border bg-card">
                     <div className="flex items-start justify-between mb-2">
                       <p className="font-medium text-foreground">{rec.title}</p>
                       <div className="flex gap-2">
-                        <Badge className="bg-secondary/50 text-foreground">Impact: {rec.impact}</Badge>
-                        <Badge variant="outline">Effort: {rec.effort}</Badge>
+                        <Badge className="bg-primary/10 text-primary border-primary/20">
+                          Impact: {rec.impact || 'Medium'}
+                        </Badge>
                       </div>
                     </div>
                     <p className="text-sm text-muted-foreground">{rec.description}</p>
                   </div>
                 ))}
+                {!insights?.deepAnalysis?.creativeFatigue?.length && (
+                  <p className="text-muted-foreground text-sm py-2">
+                    No immediate creative fatigue issues were detected.
+                  </p>
+                )}
               </div>
             </Card>
-          </TabsContent>
 
-          {/* Raw Data Tab */}
-          <TabsContent value="raw">
-            <Card className="p-6">
-              <div className="p-8 text-center">
-                <FileSpreadsheet className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="font-display font-semibold text-foreground mb-2">Raw Data Viewer</h3>
-                <p className="text-muted-foreground max-w-md mx-auto">
-                  Detailed row-by-row data will be displayed here in a future update. For now, review the Overview and
-                  Insights tabs for your analysis.
-                </p>
-              </div>
-            </Card>
           </TabsContent>
         </Tabs>
       </main>
