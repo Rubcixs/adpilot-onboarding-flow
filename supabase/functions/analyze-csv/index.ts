@@ -77,29 +77,84 @@ serve(async (req) => {
     const lines = text.trim().split('\n')
     const csvHeaders = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
     
-    const csvData = []
+    const rawData = []
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''))
       const row: any = {}
       csvHeaders.forEach((header, idx) => {
         row[header] = values[idx] || ''
       })
+      rawData.push(row);
+    }
+
+    // --- Meta-Specific Cleaning: Remove TOTAL/SUMMARY rows ---
+    const csvHeaders2 = Object.keys(rawData[0] || {});
+    
+    // Detect key columns for Meta summary detection
+    const adSetNameCol = csvHeaders2.find(h => h.toLowerCase().includes('ad set name') || h === 'Ad set name');
+    const campaignNameCol = csvHeaders2.find(h => h.toLowerCase().includes('campaign name') || h === 'Campaign name');
+    const platformCol = csvHeaders2.find(h => h.toLowerCase().includes('platform'));
+    const campaignIdCol = csvHeaders2.find(h => h.toLowerCase().includes('campaign id'));
+    const adSetIdCol = csvHeaders2.find(h => h.toLowerCase().includes('ad set id'));
+    const endsCol = csvHeaders2.find(h => h.toLowerCase().includes('reporting ends') || h.toLowerCase().includes('ends'));
+    
+    const csvData = rawData.filter((row, index) => {
+      // Rule 1: Ad set name is empty/blank/NaN
+      if (adSetNameCol) {
+        const adSetName = String(row[adSetNameCol] || '').trim().toLowerCase();
+        if (!adSetName || adSetName === 'nan' || adSetName === '') {
+          console.log(`Excluding row ${index}: Empty Ad set name`);
+          return false;
+        }
+      }
       
-      // Filter out total/summary rows
+      // Rule 2: Platform is empty or NaN
+      if (platformCol) {
+        const platform = String(row[platformCol] || '').trim().toLowerCase();
+        if (!platform || platform === 'nan' || platform === '') {
+          console.log(`Excluding row ${index}: Empty Platform`);
+          return false;
+        }
+      }
+      
+      // Rule 3: Campaign name is empty/blank/NaN
+      if (campaignNameCol) {
+        const campaignName = String(row[campaignNameCol] || '').trim().toLowerCase();
+        if (!campaignName || campaignName === 'nan' || campaignName === '') {
+          console.log(`Excluding row ${index}: Empty Campaign name`);
+          return false;
+        }
+      }
+      
+      // Rule 4: Campaign ID = 0 AND Ad set ID = 0
+      if (campaignIdCol && adSetIdCol) {
+        const campaignId = toNumber(row[campaignIdCol]);
+        const adSetId = toNumber(row[adSetIdCol]);
+        if (campaignId === 0 && adSetId === 0) {
+          console.log(`Excluding row ${index}: Both Campaign ID and Ad Set ID are 0`);
+          return false;
+        }
+      }
+      
+      // Rule 5: Check if name columns contain "total" keywords
       const isTotalRow = Object.entries(row).some(([key, value]) => {
         const keyLower = key.toLowerCase();
         const valStr = String(value || '').toLowerCase();
-        // Check if this is a name column and contains "total" keywords
-        if (keyLower.includes('name') || keyLower.includes('campaign') || keyLower.includes('ad set') || keyLower.includes('ad name')) {
+        if (keyLower.includes('name') || keyLower.includes('campaign') || keyLower.includes('ad set')) {
           return valStr.includes('total') || valStr.includes('summary') || valStr.includes('grand total') || valStr.includes('account total');
         }
         return false;
       });
       
-      if (!isTotalRow) {
-        csvData.push(row);
+      if (isTotalRow) {
+        console.log(`Excluding row ${index}: Contains "total" keyword in name column`);
+        return false;
       }
-    }
+      
+      return true; // Keep this row
+    });
+    
+    console.log(`Filtered ${rawData.length - csvData.length} summary rows, kept ${csvData.length} atomic rows`);
 
     const openAiKey = Deno.env.get('OPENAI_API_KEY')
     console.log(`Analyzing ${file.name} (${csvData.length} rows)`);
