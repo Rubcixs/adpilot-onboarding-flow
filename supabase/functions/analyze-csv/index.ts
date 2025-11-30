@@ -89,11 +89,7 @@ NO EXTRA TEXT. ONLY JSON.`;
 
 // 4. AI INSIGHTS SYSTEM PROMPT
 const ADPILOT_INSIGHTS_SYSTEM = `You are AdPilot — an AI performance analyst.
-Your job is to analyze Meta ads CSV data and generate:
-1) AI Verdict
-2) Best Performers
-3) Needs Attention
-4) Score (0–100)
+Your job is to analyze Meta ads CSV data and evaluate each creative/ad individually.
 
 GOAL DETECTION:
 - Use the provided "goal" field if present.
@@ -104,21 +100,50 @@ GOAL DETECTION:
     - Else → goal = "awareness"
 
 PRIMARY KPI RULES:
-- If goal = leads → use CPL (cost_per_lead)
+- If goal = leads → use CPL (cost per lead)
 - If goal = purchases:
       - If revenue exists → use ROAS
-      - Else → use CPP (cost_per_purchase)
+      - Else → use CPP (cost per purchase)
 - If goal = traffic → use CPC
 - If goal = awareness → use CPM
+
+EVALUATE EACH AD:
+For each ad/creative, compute:
+- CPL (if leads > 0)
+- CPC (cost per click)
+- CPM (cost per 1000 impressions)
+- CTR (click-through rate %)
+- Primary KPI (based on the detected goal)
+
+PERFORMANCE THRESHOLDS:
+
+CPL Benchmarks:
+- Excellent CPL = < €5
+- Good CPL = €5–€10
+- Weak CPL = €10–€20
+- Critical CPL = > €20
+
+CTR Benchmarks:
+- Excellent CTR = > 2.5%
+- Good CTR = 1.5–2.5%
+- Weak CTR = 0.5–1.5%
+- Critical CTR = < 0.5%
+
+RANKING LOGIC:
+Based on the PRIMARY KPI for the account:
+- If goal = "leads" → rank ads by CPL (lowest = best)
+- If goal = "purchases" → rank by CPP / ROAS (best value = best)
+- If goal = "traffic" → rank by CPC (lowest = best)
+- If goal = "awareness" → rank by CPM (lowest = best)
 
 AI VERDICT:
 Create a 1–3 sentence summary:
 - Describe overall performance.
-- Compare primary KPI vs industry norms (if missing, infer reasonable ranges).
+- Compare primary KPI vs industry benchmarks.
 - State clearly whether performance is strong, average, weak, or critical.
 
 SCORE (0–100):
-Use simple rules:
+Use these rules:
 - Excellent = 85–100
 - Good = 70–85
 - Average = 50–70
@@ -126,20 +151,44 @@ Use simple rules:
 - Critical = 0–30
 
 BEST PERFORMERS:
-- Pick top 3 ads based on the PRIMARY KPI.
-- Give each item:
-    {
-      "label": "<ad name>",
-      "badge": "<metric label>"
-    }
-Example badges: "Strong CPL of €4.12", "ROAS 3.2x", "Low CPC €0.18"
+Select the top 3 ads based on the primary KPI (best value).
+For each provide:
+{
+  "label": "<ad name>",
+  "badge": "<performance description>",
+  "reason": "<why it performed well>"
+}
+
+Badge format examples:
+- "Strong CPL €3.85"
+- "Efficient CPC €0.14"
+- "Excellent CTR 3.12%"
+- "Strong ROAS 2.4x"
+
+Reason examples:
+- "This ad achieved the lowest CPL in the account."
+- "This creative drove strong CTR and low CPC."
+- "Best ROAS with consistent conversion volume."
 
 NEEDS ATTENTION:
-- Pick bottom 3 ads based on PRIMARY KPI.
-- Same structure, but badge shows the problem:
-    "High CPL of €17.20"
-    "Weak CTR of 0.41%"
-    "Poor ROAS 0.8x"
+Select the worst 3 ads based on the primary KPI (highest value).
+For each provide:
+{
+  "label": "<ad name>",
+  "badge": "<issue label>",
+  "reason": "<what is wrong>"
+}
+
+Badge format examples:
+- "High CPL €17.22"
+- "Weak CTR 0.24%"
+- "Poor CPC €0.82"
+- "Low ROAS 0.34x"
+
+Reason examples:
+- "High CPL due to weak conversion rate."
+- "Low CTR suggests creatives are failing to attract attention."
+- "Poor CPC indicates audience targeting needs refinement."
 
 OUTPUT FORMAT — RETURN EXACTLY THIS JSON:
 
@@ -147,14 +196,14 @@ OUTPUT FORMAT — RETURN EXACTLY THIS JSON:
   "score": number,
   "verdict": "string",
   "bestPerformers": [
-       { "label": "...", "badge": "..." }
+       { "label": "...", "badge": "...", "reason": "..." }
   ],
   "needsAttention": [
-       { "label": "...", "badge": "..." }
+       { "label": "...", "badge": "...", "reason": "..." }
   ]
 }
 
-Do NOT return explanations. Only JSON.`;
+Return ONLY valid JSON. No explanations.`;
 
 // 5. STRICT AI INSIGHTS PROMPT
 
@@ -564,14 +613,19 @@ serve(async (req) => {
       if (nameCol) {
         const name = String(row[nameCol] || "Unknown").trim();
         if (name) {
-            const e = rowMap.get(name) || { spend: 0, results: 0, revenue: 0 };
-            e.spend += spend; e.results += purch; e.revenue += rev;
+            const e = rowMap.get(name) || { spend: 0, impressions: 0, clicks: 0, purchases: 0, leads: 0, revenue: 0 };
+            e.spend += spend;
+            e.impressions += imps;
+            if (clicksCol) e.clicks += toNumber(row[clicksCol]);
+            e.purchases += purch;
+            e.leads += leads;
+            e.revenue += rev;
             rowMap.set(name, e);
+        }
+      }
     }
     
     console.log(`Totals: Spend=${totalSpend}, Impressions=${totalImps}, Clicks=${totalClicks ?? 'null'}, Purchases=${totalPurch}, Leads=${totalLeads}, Revenue=${totalRev}`);
-      }
-    }
     
     // --- C. Calculate All Metrics ---
     // CRITICAL: CTR is null if either impressions or clicks are null/0
@@ -756,14 +810,32 @@ serve(async (req) => {
       };
     }
 
-    // --- G. Prepare AI Context (metrics + CSV structure + sample rows) ---
-    // Calculate rows for AI analysis
-    const rows = Array.from(rowMap.entries()).map(([name, d]) => ({
+    // --- G. Prepare AI Context (metrics + per-ad data) ---
+    // Calculate per-ad metrics with all KPIs
+    const adsData = Array.from(rowMap.entries()).map(([name, d]) => {
+      const adCpl = d.leads > 0 ? round(d.spend / d.leads, 2) : null;
+      const adCpc = d.clicks > 0 ? round(d.spend / d.clicks, 2) : null;
+      const adCpm = d.impressions > 0 ? round((d.spend / d.impressions) * 1000, 2) : null;
+      const adCtr = d.impressions > 0 && d.clicks > 0 ? round((d.clicks / d.impressions) * 100, 2) : null;
+      const adRoas = d.revenue > 0 && d.spend > 0 ? round(d.revenue / d.spend, 2) : null;
+      const adCpp = d.purchases > 0 ? round(d.spend / d.purchases, 2) : null;
+      
+      return {
         name,
-        spend: round(d.spend),
-        roas: d.spend > 0 ? round(d.revenue / d.spend) : 0,
-        cpa: d.results > 0 ? round(d.spend / d.results) : 0
-    }));
+        spend: round(d.spend, 2),
+        impressions: d.impressions,
+        clicks: d.clicks,
+        leads: d.leads,
+        purchases: d.purchases,
+        revenue: round(d.revenue, 2),
+        cpl: adCpl,
+        cpc: adCpc,
+        cpm: adCpm,
+        ctr: adCtr,
+        roas: adRoas,
+        cpp: adCpp
+      };
+    }).filter(ad => ad.spend > 0); // Only include ads with spend
 
     const sampleRows = csvData.slice(0, 5).map(row => {
       const sample: any = {};
@@ -793,25 +865,16 @@ serve(async (req) => {
         primaryKpi: metrics.primaryKpiLabel,
         primaryKpiValue: metrics.primaryKpiValue
       },
-      csvSummary: {
-        rowCount: csvData.length,
-        columnNames: Object.keys(csvData[0] || {}),
-        sampleRows: sampleRows
-      },
-      topPerformers: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.roas - a.roas).slice(0, 5),
-      worstPerformers: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.cpa - a.cpa).slice(0, 5)
+      adsData: adsData
     };
 
-    const userPrompt = `INPUT DATA (JSON):
+    const userPrompt = `ACCOUNT METRICS:
 ${JSON.stringify(aiContext.metrics, null, 2)}
 
-TOP PERFORMERS BY ROAS:
-${JSON.stringify(aiContext.topPerformers, null, 2)}
+ALL ADS DATA (with individual metrics):
+${JSON.stringify(aiContext.adsData, null, 2)}
 
-WORST PERFORMERS BY CPA:
-${JSON.stringify(aiContext.worstPerformers, null, 2)}
-
-Analyze this data and return the JSON output.`;
+Evaluate each ad individually and return the JSON output.`;
 
     // --- H. Call AI (with Math Fallback) ---
     let aiInsights = null;
@@ -845,49 +908,49 @@ Analyze this data and return the JSON output.`;
       const aiData = await response.json();
       console.log("AI RAW RESPONSE:", JSON.stringify(aiData, null, 2));
       
-      if (aiData.content && aiData.content[0]?.text) {
-         const cleanedText = cleanJson(aiData.content[0].text);
-         const rawInsights = JSON.parse(cleanedText);
-         console.log('✅ AI Insights parsed:', rawInsights);
-         
-         // Map simple AI output to full AIInsights structure
-         const verdictTone = rawInsights.score >= 70 ? "positive" : rawInsights.score >= 50 ? "mixed" : "negative";
-         
-         aiInsights = {
-           insights: {
-             healthScore: rawInsights.score,
-             quickVerdict: rawInsights.verdict,
-             quickVerdictTone: verdictTone,
-             bestPerformers: rawInsights.bestPerformers?.map((p: any) => ({
-               id: p.label,
-               reason: p.badge
-             })) || [],
-             needsAttention: rawInsights.needsAttention?.map((p: any) => ({
-               id: p.label,
-               reason: p.badge
-             })) || [],
-             whatsWorking: [],
-             whatsNotWorking: [],
-             deepAnalysis: {
-               funnelHealth: {
-                 status: verdictTone === "positive" ? "Healthy" : verdictTone === "mixed" ? "Warning" : "Broken",
-                 title: "Conversion Funnel",
-                 description: verdictTone === "positive" 
-                   ? "Funnel is converting efficiently with strong metrics."
-                   : verdictTone === "mixed"
-                     ? "Funnel shows moderate performance with room for optimization."
-                     : "Funnel needs immediate attention to reduce costs and improve conversions.",
-                 metricToWatch: metrics.primaryKpiKey?.toUpperCase() || "ROAS"
-               },
-               opportunities: [],
-               moneyWasters: [],
-               creativeFatigue: []
-             },
-             segmentAnalysis: null
-           }
-         };
-         console.log('✅ AI Insights generated successfully');
-      }
+       if (aiData.content && aiData.content[0]?.text) {
+          const cleanedText = cleanJson(aiData.content[0].text);
+          const rawInsights = JSON.parse(cleanedText);
+          console.log('✅ AI Insights parsed:', rawInsights);
+          
+          // Map simple AI output to full AIInsights structure
+          const verdictTone = rawInsights.score >= 70 ? "positive" : rawInsights.score >= 50 ? "mixed" : "negative";
+          
+          aiInsights = {
+            insights: {
+              healthScore: rawInsights.score,
+              quickVerdict: rawInsights.verdict,
+              quickVerdictTone: verdictTone,
+              bestPerformers: rawInsights.bestPerformers?.map((p: any) => ({
+                id: p.label,
+                reason: p.badge + (p.reason ? ` — ${p.reason}` : '')
+              })) || [],
+              needsAttention: rawInsights.needsAttention?.map((p: any) => ({
+                id: p.label,
+                reason: p.badge + (p.reason ? ` — ${p.reason}` : '')
+              })) || [],
+              whatsWorking: [],
+              whatsNotWorking: [],
+              deepAnalysis: {
+                funnelHealth: {
+                  status: verdictTone === "positive" ? "Healthy" : verdictTone === "mixed" ? "Warning" : "Broken",
+                  title: "Conversion Funnel",
+                  description: verdictTone === "positive" 
+                    ? "Funnel is converting efficiently with strong metrics."
+                    : verdictTone === "mixed"
+                      ? "Funnel shows moderate performance with room for optimization."
+                      : "Funnel needs immediate attention to reduce costs and improve conversions.",
+                  metricToWatch: metrics.primaryKpiKey?.toUpperCase() || "ROAS"
+                },
+                opportunities: [],
+                moneyWasters: [],
+                creativeFatigue: []
+              },
+              segmentAnalysis: null
+            }
+          };
+          console.log('✅ AI Insights generated successfully');
+       }
     } catch (e) {
       console.error("AI Error:", e);
       console.log("Using Smart Fallback");
@@ -897,6 +960,17 @@ Analyze this data and return the JSON output.`;
     // --- I. "Smart Fallback" (If AI failed, generate basic insights) ---
     if (!aiInsights || !aiInsights.insights) {
        console.log("Generating fallback insights...");
+       
+       // Recreate adsData for fallback (in case it wasn't created earlier)
+       const fallbackAds = Array.from(rowMap.entries()).map(([name, d]) => {
+         const adCpl = d.leads > 0 ? round(d.spend / d.leads, 2) : null;
+         const adCpc = d.clicks > 0 ? round(d.spend / d.clicks, 2) : null;
+         const adRoas = d.revenue > 0 && d.spend > 0 ? round(d.revenue / d.spend, 2) : null;
+         const adCpp = d.purchases > 0 ? round(d.spend / d.purchases, 2) : null;
+         
+         return { name, spend: d.spend, cpl: adCpl, cpc: adCpc, roas: adRoas, cpp: adCpp };
+       }).filter(ad => ad.spend > 0);
+       
        const primaryValue = metrics.primaryKpiValue || 0;
        const isGood = metrics.goal === "purchases" 
          ? (metrics.roas && metrics.roas > 2) 
@@ -905,6 +979,21 @@ Analyze this data and return the JSON output.`;
        const score = isGood ? 80 : 40;
        const verdictTone = score >= 70 ? "positive" : score >= 50 ? "mixed" : "negative";
        
+       // Sort by goal-appropriate metric
+       let bestAds = [];
+       let worstAds = [];
+       
+       if (metrics.goal === "leads") {
+         bestAds = fallbackAds.filter(a => a.cpl).sort((a, b) => a.cpl! - b.cpl!).slice(0, 3);
+         worstAds = fallbackAds.filter(a => a.cpl).sort((a, b) => b.cpl! - a.cpl!).slice(0, 3);
+       } else if (metrics.goal === "purchases") {
+         bestAds = fallbackAds.filter(a => a.roas).sort((a, b) => b.roas! - a.roas!).slice(0, 3);
+         worstAds = fallbackAds.filter(a => a.roas).sort((a, b) => a.roas! - b.roas!).slice(0, 3);
+       } else {
+         bestAds = fallbackAds.filter(a => a.cpc).sort((a, b) => a.cpc! - b.cpc!).slice(0, 3);
+         worstAds = fallbackAds.filter(a => a.cpc).sort((a, b) => b.cpc! - a.cpc!).slice(0, 3);
+       }
+       
        aiInsights = {
          insights: {
            healthScore: score,
@@ -912,10 +1001,22 @@ Analyze this data and return the JSON output.`;
              ? `Performance is strong with healthy ${metrics.primaryKpiLabel} metrics. Account is scaling efficiently.`
              : `Performance needs optimization. ${metrics.primaryKpiLabel} requires attention to improve efficiency.`,
            quickVerdictTone: verdictTone,
-           bestPerformers: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.roas - a.roas).slice(0, 3)
-             .map((p: any) => ({ id: p.name, reason: `Strong ROAS ${p.roas.toFixed(2)}x` })),
-           needsAttention: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.cpa - a.cpa).slice(0, 3)
-             .map((p: any) => ({ id: p.name, reason: `High CPA €${p.cpa.toFixed(2)}` })),
+           bestPerformers: bestAds.map(a => ({
+             id: a.name,
+             reason: metrics.goal === "leads" && a.cpl 
+               ? `Strong CPL €${a.cpl.toFixed(2)}`
+               : metrics.goal === "purchases" && a.roas
+                 ? `Strong ROAS ${a.roas.toFixed(2)}x`
+                 : a.cpc ? `Low CPC €${a.cpc.toFixed(2)}` : `Top performer`
+           })),
+           needsAttention: worstAds.map(a => ({
+             id: a.name,
+             reason: metrics.goal === "leads" && a.cpl 
+               ? `High CPL €${a.cpl.toFixed(2)}`
+               : metrics.goal === "purchases" && a.roas
+                 ? `Low ROAS ${a.roas.toFixed(2)}x`
+                 : a.cpc ? `High CPC €${a.cpc.toFixed(2)}` : `Needs attention`
+           })),
            whatsWorking: [],
            whatsNotWorking: [],
            deepAnalysis: {
