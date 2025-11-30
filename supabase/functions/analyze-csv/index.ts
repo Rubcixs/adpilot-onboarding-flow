@@ -87,27 +87,21 @@ Priority: objective column → data-based inference (purchases > leads > traffic
 Never return Infinity or NaN. When denominator is 0, set metric to null.
 NO EXTRA TEXT. ONLY JSON.`;
 
-// 4. AI INSIGHTS SYSTEM PROMPT - FOCUSED ON DEEP ANALYSIS
+// 4. AI INSIGHTS SYSTEM PROMPT - STRICT FOCUSED ANALYSIS
 const ADPILOT_INSIGHTS_SYSTEM = `You are AdPilot — an advanced Meta Ads performance analyst.
 
 Your job: analyze the provided metrics + CSV rows and return insights ONLY in the exact JSON structure required by the UI.
 
 ⚠️ VERY IMPORTANT RULES
 - Return ONLY JSON.
-- NO additional commentary.
-- NO markdown.
-- NO text before or after the JSON.
-- Keys MUST match exactly the structure below.
-- All insights must be based strictly on the provided data.
-- If something cannot be derived from the data, DO NOT hallucinate — return a neutral statement.
-
------------------------------------
-EXPECTED JSON STRUCTURE (MUST MATCH)
------------------------------------
+- NO markdown, no commentary, no text before/after JSON.
+- If data is limited, still produce insights based on what CAN be concluded (but do NOT hallucinate fake numbers).
+- Each section MUST contain at least one meaningful insight unless absolutely impossible.
+- Keys must match EXACTLY this structure:
 
 {
   "funnelHealth": {
-    "status": "Healthy" | "Warning" | "Broken",
+    "status": "",
     "title": "Conversion Funnel",
     "description": "",
     "metricToWatch": ""
@@ -116,77 +110,91 @@ EXPECTED JSON STRUCTURE (MUST MATCH)
     {
       "title": "",
       "description": "",
-      "impact": "Low" | "Medium" | "High"
+      "impact": ""
     }
   ],
   "budgetLeaks": [
     {
       "title": "",
       "description": "",
-      "impact": "Low" | "Medium" | "High"
+      "impact": ""
     }
   ]
 }
 
------------------------------------
-ANALYSIS RULES
------------------------------------
+--------------------------------------
+ANALYSIS LOGIC (MANDATORY)
+--------------------------------------
 
-Use the following logic to fill the JSON:
+### FUNNEL HEALTH
+Status must be one of:
+- "Healthy"
+- "Warning"
+- "Broken"
 
-### 1. Funnel Health
-- Healthy → good CPL, consistent leads, stable CTR, balanced CPM.
-- Warning → mid CPL, unstable CTR, inconsistent results.
-- Broken → very high CPL, no leads, CTR extremely low (<0.5%), CPM very high.
+Rules:
+- If CPL is low AND CTR + CPM stable → Healthy
+- If CPL average OR CTR inconsistent → Warning
+- If CPL very high OR leads very low → Broken
 
-Description should clearly summarize funnel efficiency.
+description = clear summary (2-3 sentences)
+metricToWatch = the weakest metric (CPL, CTR, CPM, Lead volume, etc.)
 
-metricToWatch = the most important weak point
-Examples:
-- "CPL is above account average"
-- "CTR dropped below normal"
-- "CPM is inflating"
-- "Lead volume inconsistent"
+--------------------------------------
+PROFIT OPPORTUNITIES (ALWAYS RETURN ≥1)
+--------------------------------------
 
-### 2. Profit Opportunities (positive findings)
-Add 2–4 items max, based on:
-- Ads with BELOW-average CPL
-- Ads with ABOVE-average CTR
-- Placements with cheap CPM
-- Days with strong performance
-- Any statistically strong pattern
+Find patterns such as:
+- Low CPL ads
+- High CTR assets
+- Cheap CPM placements
+- Strong-performing age/gender breakdowns
+- Creative themes that outperform average
 
-Each item:
-- Title = what exactly you found
-- Description = why it's good (include numbers)
-- Impact = High / Medium / Low
+Format:
+{
+  "title": "High-performing creative format",
+  "description": "Video creatives achieved 32% lower CPL than account average (CPL €X vs €Y).",
+  "impact": "High"
+}
 
-If no opportunities → return empty array.
+Impact must be: "High", "Medium", or "Low"
 
-### 3. Budget Leaks (negative findings)
-Add 2–4 items max:
-- Ads with high CPL
-- High spend with low output
-- Creatives with terrible CTR
-- Placements with very high CPM
-- Overspending on underperformers
+If data is limited → Base opportunities on relative comparisons within the dataset.
+MANDATORY: Return at least 1-3 opportunities.
 
-Title = the problem
-Description = what exactly is wrong + numbers
-Impact = High / Medium / Low
+--------------------------------------
+BUDGET LEAKS (ALWAYS RETURN ≥1)
+--------------------------------------
 
-If everything is healthy → return:
-"budgetLeaks": []
+Identify inefficiencies:
+- High CPL ads
+- High spend but low results
+- Weak CTR creatives
+- Expensive placements
+- Ads with impressions but no conversions
 
------------------------------------
-FINAL INSTRUCTION
------------------------------------
+Example:
+{
+  "title": "High CPL on specific creative",
+  "description": "Creative 'Video #3' generated CPL of €15.61 — 3× higher than account average.",
+  "impact": "High"
+}
 
-After analyzing the metrics and CSV:
-→ Return ONLY the final JSON object according to the schema above.
-→ NO markdown.
-→ NO explanation text.
-→ No surrounding prose.`;
+Impact must be: "High", "Medium", or "Low"
+
+If data limited → pick the highest-cost or lowest-performing patterns.
+MANDATORY: Return at least 1-3 budget leaks.
+
+--------------------------------------
+FINAL OUTPUT
+--------------------------------------
+
+After analyzing the data:
+→ Return ONLY a valid JSON object.
+→ DO NOT write any explanation outside that JSON.
+→ No markdown.
+→ No code fences.`;
 
 // 5. STRICT AI INSIGHTS PROMPT
 
@@ -1026,19 +1034,47 @@ Evaluate each ad individually and return the JSON output.`;
            })),
            whatsWorking: [],
            whatsNotWorking: [],
-           deepAnalysis: {
-             funnelHealth: { 
-                status: isGood ? "Healthy" : "Warning", 
-                title: "Conversion Funnel", 
-                description: isGood 
-                  ? "Funnel is converting efficiently with strong metrics across the board."
-                  : "Funnel shows leakage with elevated costs. Focus on improving conversion rates.", 
-                metricToWatch: metrics.primaryKpiKey?.toUpperCase() || "ROAS"
-             },
-             opportunities: [],
-             moneyWasters: [],
-             creativeFatigue: []
-           },
+            deepAnalysis: {
+              funnelHealth: { 
+                 status: isGood ? "Healthy" : "Warning", 
+                 title: "Conversion Funnel", 
+                 description: isGood 
+                   ? "Funnel is converting efficiently with strong metrics across the board."
+                   : "Funnel shows leakage with elevated costs. Focus on improving conversion rates.", 
+                 metricToWatch: metrics.primaryKpiKey?.toUpperCase() || "ROAS"
+              },
+              opportunities: bestAds.length > 0 ? [
+                {
+                  title: `Top performer: ${bestAds[0].name}`,
+                  description: metrics.goal === "leads" && bestAds[0].cpl
+                    ? `This ad achieved CPL of €${bestAds[0].cpl.toFixed(2)}, significantly outperforming account average.`
+                    : metrics.goal === "purchases" && bestAds[0].roas
+                      ? `This ad achieved ROAS of ${bestAds[0].roas.toFixed(2)}x with strong efficiency.`
+                      : `This ad shows strong performance metrics relative to account average.`,
+                  impact: "High"
+                }
+              ] : [{
+                title: "Optimize targeting",
+                description: "Refine audience targeting to improve conversion efficiency.",
+                impact: "Medium"
+              }],
+              moneyWasters: worstAds.length > 0 ? [
+                {
+                  title: `Underperformer: ${worstAds[0].name}`,
+                  description: metrics.goal === "leads" && worstAds[0].cpl
+                    ? `This ad has CPL of €${worstAds[0].cpl.toFixed(2)}, significantly above account average.`
+                    : metrics.goal === "purchases" && worstAds[0].roas !== null
+                      ? `This ad has low ROAS of ${worstAds[0].roas.toFixed(2)}x, indicating inefficient spend.`
+                      : `This ad shows poor performance metrics relative to account average.`,
+                  impact: "High"
+                }
+              ] : [{
+                title: "High cost per result",
+                description: "Current acquisition costs are above optimal levels for this campaign type.",
+                impact: "Medium"
+              }],
+              creativeFatigue: []
+            },
            segmentAnalysis: null
          }
        };
