@@ -64,10 +64,31 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
   try {
-    const { csvData, fileName } = await req.json()
-    const openAiKey = Deno.env.get('OPENAI_API_KEY')
+    // Parse FormData from frontend
+    const formData = await req.formData()
+    const file = formData.get('file') as File
+    
+    if (!file) {
+      throw new Error('No file uploaded')
+    }
 
-    console.log(`Analyzing ${fileName} (${csvData.length} rows)`);
+    // Read and parse CSV
+    const text = await file.text()
+    const lines = text.trim().split('\n')
+    const csvHeaders = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
+    
+    const csvData = []
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''))
+      const row: any = {}
+      csvHeaders.forEach((header, idx) => {
+        row[header] = values[idx] || ''
+      })
+      csvData.push(row)
+    }
+
+    const openAiKey = Deno.env.get('OPENAI_API_KEY')
+    console.log(`Analyzing ${file.name} (${csvData.length} rows)`);
 
     // --- A. Detect Columns ---
     const headers = Object.keys(csvData[0]).map(h => h.trim());
@@ -180,6 +201,9 @@ serve(async (req) => {
 
     // --- F. Final Response ---
     const finalResponse = {
+       ok: true,
+       rowCount: csvData.length,
+       columnNames: Object.keys(csvData[0] || {}),
        ...analysisSummary.metrics,
        aiInsights: aiInsights
     };
