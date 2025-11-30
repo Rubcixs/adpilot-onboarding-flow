@@ -272,53 +272,158 @@ serve(async (req) => {
     const openAiKey = Deno.env.get('OPENAI_API_KEY')
     console.log(`Analyzing ${file.name} (${csvData.length} rows)`);
 
-    // --- A. Detect Columns (excluding "Total" columns) ---
-    const headers = Object.keys(csvData[0]).map(h => h.trim());
+    // --- B. STRICT DETERMINISTIC METRICS DETECTION ---
+    // 
+    // Step 1: Get headers and normalize all column names
+    const headers = Object.keys(csvData[0] || {}).map(h => h.trim());
     
-    // Filter out columns that are "Total" variants (e.g., "Total Results", "All Results")
-    const isNonTotalColumn = (h: string) => {
-      const lower = h.toLowerCase();
-      return !lower.startsWith('total ') && 
-             !lower.startsWith('all ') && 
-             !lower.startsWith('grand ') &&
-             h.trim() !== ''; // Exclude empty column names
+    const normalizeColName = (name: string): string => {
+      return name.toLowerCase().replace(/[^a-z0-9]/g, '');
     };
     
-    const normalizeHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const normalizedHeaders = Object.keys(csvData[0])
-      .filter(isNonTotalColumn)
-      .map(h => ({
-        original: h,
-        normalized: normalizeHeader(h),
-      }));
-
-    const findCol = (regex: RegExp) => normalizedHeaders.find(h => regex.test(h.normalized))?.original;
-
-    // Detect all metric columns (base columns only, no "Total X" variants)
-    let spendCol = findCol(/^spent$|^spend$|^amountspent|^izterets$|^terini$/) || headers.filter(isNonTotalColumn).find(h => h.includes('Amount spent'));
-    let revCol = findCol(/conversionvalue|purchasevalue|^ienakumi$|^pelnja$|^vertiba$|^revenue$|^totalconversionvalue$/) || headers.filter(isNonTotalColumn).find(h => h.includes('conversion value') || h.includes('revenue') || h.includes('value'));
-    let purchCol = findCol(/^purchases$|^totalpurchases$|^purchase$|^websitepurchases$|^offlinepurchases$|^metapurchases$|^inapppurchases$|^offsiteconversionpurchase$|^actionspurchase$|^purchaseevent$/) || headers.filter(isNonTotalColumn).find(h => h === 'Purchases' || h === 'Website purchases' || h === 'Purchase' || h.includes('purchase'));
-    let leadsCol = findCol(/^leads$|^totallead$|^lead$|^websiteleads$|^offlineleads$|^metaleads$|^onfacebooklead$|^generatedleads$|^conversions$/) || headers.filter(isNonTotalColumn).find(h => h === 'Leads' || h === 'Website leads' || h === 'Lead' || h === 'Generated leads' || h.includes('lead'));
-    let resultsCol = findCol(/^results$/) || headers.filter(isNonTotalColumn).find(h => h === 'Results');
-    let impsCol = findCol(/^impressions$|^skatijumi$/) || headers.filter(isNonTotalColumn).find(h => h === 'Impressions');
-    let clicksCol = findCol(/^clicksall$|^clicks$|^klikski$/) || headers.filter(isNonTotalColumn).find(h => h === 'Clicks (all)' || h === 'Clicks');
-    let nameCol = findCol(/adname|adsetname|campaignname|nosaukums/) || headers.filter(isNonTotalColumn).find(h => h.includes('name'));
+    const colMap = new Map<string, string>(); // normalized -> original
+    headers.forEach((h: string) => {
+      colMap.set(normalizeColName(h), h);
+    });
     
-    // Detect Meta objective/goal columns
-    let objectiveCol = findCol(/^objective$|^optimizationgoal$/) || headers.filter(isNonTotalColumn).find(h => h.toLowerCase() === 'objective' || h.toLowerCase() === 'optimization goal');
-    let campaignNameForGoal = headers.filter(isNonTotalColumn).find(h => h.toLowerCase().includes('campaign name'));
-    let adsetNameForGoal = headers.filter(isNonTotalColumn).find(h => h.toLowerCase().includes('ad set name') || h.toLowerCase().includes('adset name'));
-
-    console.log(`Column Detection: Spend=${spendCol}, Revenue=${revCol}, Purchases=${purchCol}, Leads=${leadsCol}, Results=${resultsCol}, Objective=${objectiveCol}`);
+    console.log(`Normalized ${headers.length} column names`);
     
-    // Special case: If objective indicates leads but no leads column exists, treat Results as Leads
-    if (objectiveCol && resultsCol && !leadsCol) {
-      const sampleObjective = csvData[0] && csvData[0][objectiveCol] ? String(csvData[0][objectiveCol]).toLowerCase() : '';
-      if (sampleObjective.includes('lead')) {
-        leadsCol = resultsCol;
-        console.log(`⚠️ Objective is leads-based but no Leads column found. Using Results column as Leads.`);
+    // Step 2: Detect metric columns using strict regex matching
+    
+    // SPEND: match "spend", "cost", "amount_spent"
+    let spendCol: string | null = null;
+    for (const [norm, orig] of colMap.entries()) {
+      if (/spend|cost|amountspent/.test(norm) && !/costper/.test(norm)) {
+        spendCol = orig;
+        break;
       }
     }
+    
+    // IMPRESSIONS: match "impressions"
+    let impsCol: string | null = null;
+    for (const [norm, orig] of colMap.entries()) {
+      if (/impressions/.test(norm)) {
+        impsCol = orig;
+        break;
+      }
+    }
+    
+    // CLICKS: prefer "link_clicks" over "clicks"
+    let clicksCol: string | null = null;
+    for (const [norm, orig] of colMap.entries()) {
+      if (/linkclicks/.test(norm)) {
+        clicksCol = orig;
+        break;
+      }
+    }
+    if (!clicksCol) {
+      for (const [norm, orig] of colMap.entries()) {
+        if (/clicks/.test(norm) && !/linkclicks/.test(norm)) {
+          clicksCol = orig;
+          break;
+        }
+      }
+    }
+    
+    // PURCHASES: match "purchase", "purchases"
+    let purchCol: string | null = null;
+    for (const [norm, orig] of colMap.entries()) {
+      if (/purchase|purchases/.test(norm)) {
+        purchCol = orig;
+        break;
+      }
+    }
+    
+    // LEADS: match lead-type columns with strict exclusions
+    // Pattern: /lead|leads|onfblead|websitelead|leadform|form|generatedleads|messagelead|result|results/
+    // Exclude: columns containing "costper", "purchase", "order", "checkout", "cart", "value", "revenue"
+    const leadCandidates: Array<{ col: string; total: number }> = [];
+    for (const [norm, orig] of colMap.entries()) {
+      const isLeadMatch = /lead|leads|onfblead|websitelead|leadform|form|generatedleads|messagelead|result|results/.test(norm);
+      const isExcluded = /costper|purchase|order|checkout|cart|value|revenue/.test(norm);
+      
+      if (isLeadMatch && !isExcluded) {
+        // Calculate total for this column
+        let total = 0;
+        for (const row of csvData) {
+          total += toNumber(row[orig]);
+        }
+        leadCandidates.push({ col: orig, total });
+      }
+    }
+    
+    // Pick lead column with largest non-zero total
+    let leadsCol: string | null = null;
+    let maxLeadTotal = 0;
+    for (const candidate of leadCandidates) {
+      if (candidate.total > maxLeadTotal) {
+        maxLeadTotal = candidate.total;
+        leadsCol = candidate.col;
+      }
+    }
+    
+    // REVENUE: match "revenue", "value", "purchase_conversion_value", "total_conversion_value"
+    let revCol: string | null = null;
+    for (const [norm, orig] of colMap.entries()) {
+      if (/revenue|purchaseconversionvalue|totalconversionvalue/.test(norm) && /value/.test(norm)) {
+        revCol = orig;
+        break;
+      }
+    }
+    if (!revCol) {
+      for (const [norm, orig] of colMap.entries()) {
+        if (/value/.test(norm) && !norm.includes('cost')) {
+          revCol = orig;
+          break;
+        }
+      }
+    }
+    
+    // OBJECTIVE: detect objective column for goal inference
+    let objectiveCol: string | null = null;
+    for (const [norm, orig] of colMap.entries()) {
+      if (/objective/.test(norm)) {
+        objectiveCol = orig;
+        break;
+      }
+    }
+    
+    // NAME COLUMNS: for campaign/adset/ad names
+    let nameCol: string | null = null;
+    for (const [norm, orig] of colMap.entries()) {
+      if (/adname|adsetname|campaignname|name/.test(norm)) {
+        nameCol = orig;
+        break;
+      }
+    }
+    
+    // CAMPAIGN/ADSET NAME for goal inference
+    let campaignNameForGoal: string | null = null;
+    for (const [norm, orig] of colMap.entries()) {
+      if (/campaignname/.test(norm)) {
+        campaignNameForGoal = orig;
+        break;
+      }
+    }
+    
+    let adsetNameForGoal: string | null = null;
+    for (const [norm, orig] of colMap.entries()) {
+      if (/adsetname/.test(norm)) {
+        adsetNameForGoal = orig;
+        break;
+      }
+    }
+    
+    // RESULTS column (legacy support)
+    let resultsCol: string | null = null;
+    for (const [norm, orig] of colMap.entries()) {
+      if (/^results$/.test(norm)) {
+        resultsCol = orig;
+        break;
+      }
+    }
+    
+    console.log(`Column Detection: Spend=${spendCol}, Impressions=${impsCol}, Clicks=${clicksCol}, Purchases=${purchCol}, Leads=${leadsCol}, Revenue=${revCol}, Objective=${objectiveCol}`);
 
     // --- B. Aggregate Data with Total Row Detection ---
     // Step 1: Calculate tentative totals from all rows
@@ -394,123 +499,60 @@ serve(async (req) => {
     const cpm = totalImps > 0 ? round((totalSpend / totalImps) * 1000, 2) : null;
     const roas = totalRev && totalSpend > 0 ? round(totalRev / totalSpend, 2) : null;
 
-    // --- D. DETECT CONVERSION COLUMNS (CRITICAL: Column existence, not just values) ---
+    // --- C. DETECT CAMPAIGN GOAL (STRICT DETERMINISTIC HIERARCHY) ---
     // 
-    // This determines if conversion columns EXIST, regardless of whether they have values > 0
-    // If a conversion column exists, we MUST use conversion-based KPIs, even if values are 0
-    //
-    const hasLeadsColumn = !!leadsCol;
-    const hasPurchasesColumn = !!purchCol;
-    const hasRevenueColumn = !!revCol;
-    
-    console.log(`Column Existence Check: hasLeadsColumn=${hasLeadsColumn}, hasPurchasesColumn=${hasPurchasesColumn}, hasRevenueColumn=${hasRevenueColumn}`);
-    
-    // --- E. DETECT CAMPAIGN GOAL (STRICT HIERARCHY) ---
-    // 
-    // GOAL DETECTION HIERARCHY:
-    // 1. Objective column (HIGHEST PRIORITY) - checks for Meta's "Objective" or "Optimization goal" column
-    // 2. Campaign/Adset name inference - looks for keywords like "lead", "purchase", "traffic", "awareness"
-    // 3. Column existence (if leads/purchases columns exist, that's the goal)
-    // 4. Event volume analysis - determines goal based on which conversion type has the most activity
-    //
-    // GOAL OPTIONS: "leads" | "purchases" | "traffic" | "awareness"
+    // GOAL OPTIONS: "purchases" | "leads" | "clicks" | "reach"
     //
     let goal = "";
     
     // STEP 1: Check objective column (HIGHEST PRIORITY)
     if (objectiveCol && csvData.length > 0) {
-      const objective = String(csvData[0][objectiveCol] || '').toUpperCase();
+      const objective = String(csvData[0][objectiveCol] || '').toLowerCase();
       
-      if (objective.includes('LEAD')) {
+      if (objective.includes('lead')) {
         goal = "leads";
-      } else if (objective.includes('CONVERSION') || objective.includes('PURCHASE') || objective.includes('SALES')) {
+      } else if (objective.includes('conversion') || objective.includes('purchase') || objective.includes('sales')) {
         goal = "purchases";
-      } else if (objective.includes('TRAFFIC')) {
-        goal = "traffic";
-      } else if (objective.includes('REACH') || objective.includes('AWARENESS')) {
-        goal = "awareness";
+      } else if (objective.includes('traffic')) {
+        goal = "clicks";
+      } else if (objective.includes('reach') || objective.includes('awareness')) {
+        goal = "reach";
       }
       
       console.log(`Goal from Objective column: ${goal} (Objective: ${objective})`);
     }
     
-    // STEP 2: Infer from campaign/adset names if objective missing or unclear
-    if (!goal && csvData.length > 0) {
-      // Check all rows for consistent naming patterns
-      const allCampaignNames = campaignNameForGoal 
-        ? csvData.map(r => String(r[campaignNameForGoal] || '').toLowerCase()).filter(Boolean)
-        : [];
-      const allAdsetNames = adsetNameForGoal
-        ? csvData.map(r => String(r[adsetNameForGoal] || '').toLowerCase()).filter(Boolean)
-        : [];
-      
-      const allNames = [...allCampaignNames, ...allAdsetNames].join(' ');
-      
-      // Priority order: leads > purchases > traffic > awareness
-      if (allNames.includes('lead') || allNames.includes('leadgen') || allNames.includes('lead gen') || 
-          allNames.includes('instant form') || allNames.includes('form') || allNames.includes('registration')) {
-        goal = "leads";
-      } else if (allNames.includes('purchase') || allNames.includes('sales') || allNames.includes('pirkumi') || 
-                 allNames.includes('conversion') || allNames.includes('shop')) {
-        goal = "purchases";
-      } else if (allNames.includes('traffic') || allNames.includes('trafiks') || allNames.includes('clicks')) {
-        goal = "traffic";
-      } else if (allNames.includes('awareness') || allNames.includes('reach') || allNames.includes('brand')) {
-        goal = "awareness";
-      }
-      
-      if (goal) console.log(`Goal inferred from names: ${goal}`);
-    }
-    
-    // STEP 3: Check if conversion columns exist (even if values are 0)
+    // STEP 2: Infer from data (highest non-zero total in priority order)
     if (!goal) {
-      // Priority: purchases column > leads column > traffic > awareness
-      if (hasPurchasesColumn) {
+      // Priority: purchases > leads > clicks > impressions
+      if (totalPurch > 0) {
         goal = "purchases";
-        console.log(`Goal set to purchases: Purchase column exists`);
-      } else if (hasLeadsColumn) {
+        console.log(`Goal inferred from data: purchases (total: ${totalPurch})`);
+      } else if (totalLeads > 0) {
         goal = "leads";
-        console.log(`Goal set to leads: Leads column exists`);
-      }
-    }
-    
-    // STEP 4: Infer from event volumes (which event has highest value)
-    if (!goal) {
-      // Find which conversion type has the most spend or volume
-      const purchaseScore = totalPurch > 0 ? totalPurch * 10 : 0; // Weight purchases higher
-      const leadScore = totalLeads > 0 ? totalLeads * 5 : 0;
-      const clickScore = totalClicks > 0 ? totalClicks * 1 : 0;
-      
-      if (purchaseScore >= leadScore && purchaseScore >= clickScore && totalPurch > 0) {
-        goal = "purchases";
-      } else if (leadScore >= purchaseScore && leadScore >= clickScore && totalLeads > 0) {
-        goal = "leads";
+        console.log(`Goal inferred from data: leads (total: ${totalLeads})`);
       } else if (totalClicks > 0) {
-        goal = "traffic";
+        goal = "clicks";
+        console.log(`Goal inferred from data: clicks (total: ${totalClicks})`);
       } else if (totalImps > 0) {
-        goal = "awareness";
+        goal = "reach";
+        console.log(`Goal inferred from data: reach (total impressions: ${totalImps})`);
       } else {
-        goal = "awareness"; // ultimate fallback
+        goal = "reach"; // ultimate fallback
+        console.log(`Goal fallback: reach`);
       }
-      
-      console.log(`Goal inferred from event volumes: ${goal} (Purchases: ${totalPurch}, Leads: ${totalLeads}, Clicks: ${totalClicks})`);
     }
     
-    // --- F. SELECT PRIMARY KPI (STRICT RULES - NO CTR, CONVERSION COLUMNS ALWAYS WIN) ---
+    console.log(`✅ Goal Detection Complete: ${goal}`);
+    
+    // --- D. SELECT PRIMARY KPI (STRICT DETERMINISTIC MAPPING) ---
     //
-    // PRIMARY KPI SELECTION HIERARCHY:
-    //
-    // CRITICAL RULES:
-    // 1. If conversion columns exist (purchases/leads), ALWAYS use conversion-based KPI, even if values are 0
-    // 2. CTR is FORBIDDEN as primary KPI (only count-based fallbacks allowed)
-    // 3. NEVER select CPC if conversion columns exist
-    //
-    // PURCHASES (if purchases column exists):  ROAS (if revenue > 0) → CPP (even if null) → Purchase Count → CPC → Impressions
-    // LEADS (if leads column exists):          CPL (even if null) → Lead Count → CPC → Impressions  
-    // TRAFFIC (only if NO conversion columns): CPC → Click Count → Impressions
-    // AWARENESS:                               CPM → Impressions
-    //
-    // NOTE: CTR is never used as primary KPI under any circumstances
+    // KPI MAPPING RULES:
+    // - purchases + revenue > 0 → ROAS
+    // - purchases (no revenue) → CPP
+    // - leads → CPL
+    // - clicks → CPC
+    // - reach → CPM
     //
     let primaryKpiKey = "";
     let primaryKpiLabel = "";
@@ -518,202 +560,52 @@ serve(async (req) => {
     let resultsLabel = "";
     let resultsValue: number | null = null;
     
-    const revenueAvailable = totalRev > 0;
-    const hasConversions = totalPurch > 0 || totalLeads > 0;
-    const hasConversionColumns = hasPurchasesColumn || hasLeadsColumn;
-    
-    // STEP 1: Override goal if conversion columns exist but goal was inferred as traffic
-    // This ensures we never show CPC when conversion columns are present
-    if (hasConversionColumns && goal === "traffic") {
-      if (hasPurchasesColumn) {
-        goal = "purchases";
-        console.log(`⚠️ Goal override: Purchase column exists, changing from traffic to purchases`);
-      } else if (hasLeadsColumn) {
-        goal = "leads";
-        console.log(`⚠️ Goal override: Leads column exists, changing from traffic to leads`);
-      }
-    }
-    
-    // STEP 1b: Also override if we have actual conversions but goal was traffic
-    if (hasConversions && goal === "traffic") {
-      if (totalPurch > 0) {
-        goal = "purchases";
-        console.log(`⚠️ Goal override: Found purchases (${totalPurch}), changing from traffic to purchases`);
-      } else if (totalLeads > 0) {
-        goal = "leads";
-        console.log(`⚠️ Goal override: Found leads (${totalLeads}), changing from traffic to leads`);
-      }
-    }
-    
-    // STEP 2: Goal-based KPI selection with STRICT conversion-first hierarchy
     if (goal === "purchases") {
-      // Priority: ROAS → CPP → Purchase Count → CPC → Impressions
-      // CRITICAL: Use CPP even if value is null (spend might be 0), as long as purchases column exists
-      // NEVER use CTR as primary KPI
-      if (revenueAvailable && roas !== null && roas > 0) {
+      // Check if revenue exists
+      if (totalRev > 0 && totalSpend > 0) {
         primaryKpiKey = "roas";
-        primaryKpiLabel = "ROAS";
+        primaryKpiLabel = "Return on Ad Spend";
         primaryKpiValue = roas;
-      } else if (cpp !== null && cpp > 0) {
-        // Use CPP if it's calculable and > 0
+      } else {
         primaryKpiKey = "cpp";
         primaryKpiLabel = "Cost per Purchase";
         primaryKpiValue = cpp;
-      } else if (totalPurch > 0) {
-        // Use purchase count if CPP not available but purchases exist
-        primaryKpiKey = "purchases";
-        primaryKpiLabel = "Total Purchases";
-        primaryKpiValue = totalPurch;
-      } else if (hasPurchasesColumn && totalSpend > 0) {
-        // CRITICAL: Even if purchases = 0, use CPP if column exists and spend > 0
-        // Set CPP to null but still use it as the KPI
-        primaryKpiKey = "cpp";
-        primaryKpiLabel = "Cost per Purchase";
-        primaryKpiValue = null; // Will show as "—" in UI
-        console.log(`⚠️ Using CPP as KPI even though purchases = 0 (purchase column exists)`);
-      } else if (cpc !== null && cpc > 0 && totalClicks > 0) {
-        // Only use CPC if we don't have purchase column
-        primaryKpiKey = "cpc";
-        primaryKpiLabel = "Cost per Click";
-        primaryKpiValue = cpc;
-      } else if (totalImps > 0) {
-        primaryKpiKey = "impressions";
-        primaryKpiLabel = "Impressions";
-        primaryKpiValue = totalImps;
       }
-      
-      // Results card
-      if (totalPurch > 0) {
-        resultsLabel = "Total Purchases";
-        resultsValue = totalPurch;
-      } else if (totalClicks > 0) {
-        resultsLabel = "Total Clicks";
-        resultsValue = totalClicks;
-      } else {
-        resultsLabel = "Total Results";
-        resultsValue = 0;
-      }
+      resultsLabel = "Total Purchases";
+      resultsValue = totalPurch;
       
     } else if (goal === "leads") {
-      // Priority: CPL → Lead Count → CPC → Impressions
-      // CRITICAL: Use CPL even if value is null (spend might be 0), as long as leads column exists
-      // NEVER use CTR as primary KPI
-      if (cpl !== null && cpl > 0) {
-        // Use CPL if it's calculable and > 0
-        primaryKpiKey = "cpl";
-        primaryKpiLabel = "Cost per Lead";
-        primaryKpiValue = cpl;
-      } else if (totalLeads > 0) {
-        // Use lead count if CPL not available but leads exist
-        primaryKpiKey = "leads";
-        primaryKpiLabel = "Total Leads";
-        primaryKpiValue = totalLeads;
-      } else if (hasLeadsColumn && totalSpend > 0) {
-        // CRITICAL: Even if leads = 0, use CPL if column exists and spend > 0
-        // Set CPL to null but still use it as the KPI
-        primaryKpiKey = "cpl";
-        primaryKpiLabel = "Cost per Lead";
-        primaryKpiValue = null; // Will show as "—" in UI
-        console.log(`⚠️ Using CPL as KPI even though leads = 0 (leads column exists)`);
-      } else if (cpc !== null && cpc > 0 && totalClicks > 0) {
-        // Only use CPC if we don't have leads column
-        primaryKpiKey = "cpc";
-        primaryKpiLabel = "Cost per Click";
-        primaryKpiValue = cpc;
-      } else if (totalImps > 0) {
-        primaryKpiKey = "impressions";
-        primaryKpiLabel = "Impressions";
-        primaryKpiValue = totalImps;
-      }
+      primaryKpiKey = "cpl";
+      primaryKpiLabel = "Cost per Lead";
+      primaryKpiValue = cpl;
+      resultsLabel = "Total Leads";
+      resultsValue = totalLeads;
       
-      // Results card
-      if (totalLeads > 0) {
-        resultsLabel = "Total Leads";
-        resultsValue = totalLeads;
-      } else if (totalClicks > 0) {
-        resultsLabel = "Total Clicks";
-        resultsValue = totalClicks;
-      } else {
-        resultsLabel = "Total Results";
-        resultsValue = 0;
-      }
+    } else if (goal === "clicks") {
+      primaryKpiKey = "cpc";
+      primaryKpiLabel = "Cost per Click";
+      primaryKpiValue = cpc;
+      resultsLabel = "Total Clicks";
+      resultsValue = totalClicks;
       
-    } else if (goal === "traffic") {
-      // CRITICAL: Only use traffic metrics if there are NO conversion columns
-      // If conversion columns exist, this code should never be reached due to goal override above
-      // NEVER use CTR as primary KPI - only CPC or count-based metrics
-      if (cpc !== null && cpc > 0 && totalClicks > 0) {
-        primaryKpiKey = "cpc";
-        primaryKpiLabel = "Cost per Click";
-        primaryKpiValue = cpc;
-      } else if (totalClicks > 0) {
-        // Use click count instead of CTR
-        primaryKpiKey = "clicks";
-        primaryKpiLabel = "Total Clicks";
-        primaryKpiValue = totalClicks;
-      } else if (totalImps > 0) {
-        primaryKpiKey = "impressions";
-        primaryKpiLabel = "Impressions";
-        primaryKpiValue = totalImps;
-      }
-      
-      // Results card
-      if (totalClicks > 0) {
-        resultsLabel = "Total Clicks";
-        resultsValue = totalClicks;
-      } else {
-        resultsLabel = "Total Results";
-        resultsValue = 0;
-      }
-      
-    } else { // awareness
-      // Try: CPM → Impressions
-      if (cpm !== null && cpm > 0 && totalImps > 0) {
-        primaryKpiKey = "cpm";
-        primaryKpiLabel = "CPM";
-        primaryKpiValue = cpm;
-      } else if (totalImps > 0) {
-        primaryKpiKey = "impressions";
-        primaryKpiLabel = "Impressions";
-        primaryKpiValue = totalImps;
-      }
-      
-      // Results card
+    } else { // reach
+      primaryKpiKey = "cpm";
+      primaryKpiLabel = "Cost per 1000 Impressions";
+      primaryKpiValue = cpm;
       resultsLabel = "Total Impressions";
-      resultsValue = totalImps > 0 ? totalImps : 0;
+      resultsValue = totalImps;
     }
     
-    // Sanity check: ensure primary KPI key is set
-    // NOTE: primaryKpiValue CAN be null if we're using CPL/CPP with 0 conversions
-    // This is intentional and correct - it shows "—" in the UI
-    if (!primaryKpiKey) {
-      console.warn(`⚠️ Primary KPI key was not set, falling back to impressions`);
-      primaryKpiKey = "impressions";
-      primaryKpiLabel = "Impressions";
-      primaryKpiValue = totalImps > 0 ? totalImps : 0;
-      
-      if (resultsValue === null || resultsValue === 0) {
-        resultsLabel = "Total Impressions";
-        resultsValue = totalImps > 0 ? totalImps : 0;
-      }
-    }
-    
-    // Additional validation: check for NaN or Infinity (but allow null and 0)
+    // Validation: ensure no NaN or Infinity
     if (primaryKpiValue !== null && (isNaN(primaryKpiValue) || !isFinite(primaryKpiValue))) {
       console.warn(`⚠️ Primary KPI value was NaN or Infinity, setting to null`);
       primaryKpiValue = null;
     }
     
-    // Additional safety: flag if spend is 0 (can't calculate cost metrics)
-    if (totalSpend === 0) {
-      console.warn(`⚠️ Warning: Total Spend is 0. Cost-based KPIs (CPC, CPL, CPP, CPM) will be null.`);
-    }
-    
-    console.log(`✅ Goal Detection Complete: ${goal} (Purchases: ${totalPurch}, Leads: ${totalLeads}, Clicks: ${totalClicks})`);
     console.log(`✅ Primary KPI: ${primaryKpiLabel} (${primaryKpiKey}) = ${primaryKpiValue}`);
     console.log(`✅ Results Metric: ${resultsLabel} = ${resultsValue}`);
 
-    // --- F. OPTIONAL: AI-Powered Metrics Detection ---
+    // --- E. OPTIONAL: AI-Powered Metrics Detection ---
     // Enable AI detection by setting USE_AI_METRICS=true environment variable
     const useAiMetrics = Deno.env.get('USE_AI_METRICS') === 'true';
     let metrics: any;
