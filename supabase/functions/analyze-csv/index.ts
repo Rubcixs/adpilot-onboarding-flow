@@ -87,165 +87,106 @@ Priority: objective column → data-based inference (purchases > leads > traffic
 Never return Infinity or NaN. When denominator is 0, set metric to null.
 NO EXTRA TEXT. ONLY JSON.`;
 
-// 4. COMPREHENSIVE AI INSIGHTS SYSTEM PROMPT
-const ADPILOT_INSIGHTS_SYSTEM = `You are AdPilot AI Analyst, an advanced performance marketing system.
-Your job is to produce a deep, structured, data-driven analysis using the provided:
-- Computed KPI summary
-- Row-level CSV metrics
-- Platform context
-- Campaign goal
+// 4. AI INSIGHTS SYSTEM PROMPT - FOCUSED ON DEEP ANALYSIS
+const ADPILOT_INSIGHTS_SYSTEM = `You are AdPilot — an advanced Meta Ads performance analyst.
 
-Your tone must be clear, analytical, and strictly tied to what the numbers show.
+Your job: analyze the provided metrics + CSV rows and return insights ONLY in the exact JSON structure required by the UI.
 
-🎯 Your Output JSON MUST follow this schema exactly:
+⚠️ VERY IMPORTANT RULES
+- Return ONLY JSON.
+- NO additional commentary.
+- NO markdown.
+- NO text before or after the JSON.
+- Keys MUST match exactly the structure below.
+- All insights must be based strictly on the provided data.
+- If something cannot be derived from the data, DO NOT hallucinate — return a neutral statement.
+
+-----------------------------------
+EXPECTED JSON STRUCTURE (MUST MATCH)
+-----------------------------------
+
 {
-  "insights": {
-    "healthScore": number,
-    "quickVerdict": string,
-    "quickVerdictTone": "positive" | "negative" | "mixed",
-
-    "bestPerformers": [
-      { "id": string, "reason": string }
-    ],
-    "needsAttention": [
-      { "id": string, "reason": string }
-    ],
-
-    "whatsWorking": [
-      { "title": string, "detail": string }
-    ],
-    "whatsNotWorking": [
-      { "title": string, "detail": string }
-    ],
-
-    "deepAnalysis": {
-      "funnelHealth": {
-        "status": "Healthy" | "Warning" | "Broken",
-        "title": string,
-        "description": string,
-        "metricToWatch": string
-      },
-
-      "opportunities": [
-        { "title": string, "description": string, "impact": "High" | "Medium" | "Low" }
-      ],
-
-      "moneyWasters": [
-        { "title": string, "description": string, "impact": "High" | "Medium" | "Low" }
-      ],
-
-      "creativeFatigue": [
-        { "title": string, "description": string }
-      ]
-    },
-
-    "segmentAnalysis": {
-      "demographics": { "title": string, "finding": string },
-      "placement": { "title": string, "finding": string },
-      "time": { "title": string, "finding": string }
+  "funnelHealth": {
+    "status": "Healthy" | "Warning" | "Broken",
+    "title": "Conversion Funnel",
+    "description": "",
+    "metricToWatch": ""
+  },
+  "profitOpportunities": [
+    {
+      "title": "",
+      "description": "",
+      "impact": "Low" | "Medium" | "High"
     }
-  }
+  ],
+  "budgetLeaks": [
+    {
+      "title": "",
+      "description": "",
+      "impact": "Low" | "Medium" | "High"
+    }
+  ]
 }
 
-📊 Your analysis logic (strict rules):
+-----------------------------------
+ANALYSIS RULES
+-----------------------------------
 
-1. HEALTH SCORE (0–100)
-Use weighted system based on goal:
+Use the following logic to fill the JSON:
 
-If goal = "leads":
-- CPL efficiency vs average CPL
-- Lead volume stability
-- CTR quality
-- CPM cost efficiency
+### 1. Funnel Health
+- Healthy → good CPL, consistent leads, stable CTR, balanced CPM.
+- Warning → mid CPL, unstable CTR, inconsistent results.
+- Broken → very high CPL, no leads, CTR extremely low (<0.5%), CPM very high.
 
-Formula (approx):
-- Efficiency (40%) → Is CPL below account avg or benchmarks?
-- Funnel (30%) → Click → Lead rate
-- Consistency (30%) → Performance volatility over rows
+Description should clearly summarize funnel efficiency.
 
-Return a whole integer (0–100).
-
-2. QUICK VERDICT
-A 1–2 sentence summary, must reference real numbers (CPL, CTR, leads, CPM).
-
-Tone rules:
-- CPL great → positive
-- CPL ok but unstable → mixed
-- CPL bad / high → negative
-
-3. BEST PERFORMERS / NEEDS ATTENTION
-Sort ad rows by the primary KPI:
-
-For "leads" goal:
-- Best: lowest CPL + above-avg leads
-- Worst: highest CPL OR low volume
-
-Reason must always include numbers:
+metricToWatch = the most important weak point
 Examples:
-- "Strong CPL €3.84 and 12 leads"
-- "High CPL €15.61 despite similar impressions"
+- "CPL is above account average"
+- "CTR dropped below normal"
+- "CPM is inflating"
+- "Lead volume inconsistent"
 
-For "purchases" goal:
-- Best: highest ROAS or lowest CPP
-- Worst: lowest ROAS or highest CPP
+### 2. Profit Opportunities (positive findings)
+Add 2–4 items max, based on:
+- Ads with BELOW-average CPL
+- Ads with ABOVE-average CTR
+- Placements with cheap CPM
+- Days with strong performance
+- Any statistically strong pattern
 
-4. WHAT'S WORKING
-Identify strongest signals, for example:
-- Very efficient CPL
-- Strong CTR
-- Specific creatives outperform others
-- Low CPM
-- Scaling potential
+Each item:
+- Title = what exactly you found
+- Description = why it's good (include numbers)
+- Impact = High / Medium / Low
 
-5. WHAT'S NOT WORKING
-Identify inefficiencies:
-- High CPL
-- Low CTR
-- Poor conversion rate
-- Expensive placements
-- Weak creatives
+If no opportunities → return empty array.
 
-6. FUNNEL ANALYSIS
-For goal = leads:
-- Click → Lead Rate = leads / clicks
-- CTR = clicks / impressions
-- CPM = spend / impressions * 1000
+### 3. Budget Leaks (negative findings)
+Add 2–4 items max:
+- Ads with high CPL
+- High spend with low output
+- Creatives with terrible CTR
+- Placements with very high CPM
+- Overspending on underperformers
 
-Status rules:
-- Healthy → high CTR + strong CPL
-- Warning → inconsistent CPL or unstable CTR
-- Broken → no leads OR CTR extremely low
+Title = the problem
+Description = what exactly is wrong + numbers
+Impact = High / Medium / Low
 
-7. OPPORTUNITIES
-Give real mathematical opportunities, examples:
-- "Shift 20% budget to ads with CPL < €4.00 to reduce blended CPL by ~15%."
-- "Increase spend on Video #1 — CTR 3.1% vs avg 2.2%."
-- "Create more variants similar to top 1–2 creatives."
+If everything is healthy → return:
+"budgetLeaks": []
 
-Use only data you see.
+-----------------------------------
+FINAL INSTRUCTION
+-----------------------------------
 
-8. BUDGET LEAKS (Money Wasters)
-Examples:
-- "Video #3 spent €52 but generated only 4 leads → CPL €13.00."
-- "Placement: Audience Network has high CPM and low CTR."
-
-9. SEGMENT ANALYSIS
-If breakdown columns exist (age, gender, placement, time):
-Give insights.
-
-If they don't exist:
-Return simple:
-- demographics: "No demographic segmentation provided."
-- placement: "No placement data available."
-- time: "No time-based trends visible."
-
-🔒 CRITICAL INSTRUCTIONS
-- Do NOT hallucinate column names.
-- Only reference metrics that exist in the CSV.
-- Use actual numeric values.
-- Never output commentary outside JSON.
-
-Return ONLY the JSON object.`;
+After analyzing the metrics and CSV:
+→ Return ONLY the final JSON object according to the schema above.
+→ NO markdown.
+→ NO explanation text.
+→ No surrounding prose.`;
 
 // 5. STRICT AI INSIGHTS PROMPT
 
@@ -952,8 +893,70 @@ Evaluate each ad individually and return the JSON output.`;
       
        if (aiData.content && aiData.content[0]?.text) {
           const cleanedText = cleanJson(aiData.content[0].text);
-          aiInsights = JSON.parse(cleanedText);
-          console.log('✅ AI Insights generated successfully:', aiInsights);
+          const deepInsights = JSON.parse(cleanedText);
+          console.log('✅ Deep Insights parsed:', deepInsights);
+          
+          // Calculate overview metrics for healthScore and verdict
+          const avgCpl = adsData.filter(a => a.cpl).reduce((sum, a) => sum + a.cpl!, 0) / adsData.filter(a => a.cpl).length || 10;
+          const isHealthy = metrics.goal === "leads" 
+            ? (metrics.cpl && metrics.cpl < avgCpl * 1.2)
+            : metrics.goal === "purchases"
+              ? (metrics.roas && metrics.roas > 1.5)
+              : true;
+          
+          const healthScore = deepInsights.funnelHealth.status === "Healthy" ? 85 
+            : deepInsights.funnelHealth.status === "Warning" ? 60 
+            : 35;
+          
+          const verdictTone = healthScore >= 70 ? "positive" : healthScore >= 50 ? "mixed" : "negative";
+          
+          // Sort ads by primary KPI for best/worst
+          let sortedAds = [...adsData];
+          if (metrics.goal === "leads") {
+            sortedAds.sort((a, b) => (a.cpl || 999) - (b.cpl || 999));
+          } else if (metrics.goal === "purchases") {
+            sortedAds.sort((a, b) => (b.roas || 0) - (a.roas || 0));
+          } else {
+            sortedAds.sort((a, b) => (a.cpc || 999) - (b.cpc || 999));
+          }
+          
+          const bestAds = sortedAds.slice(0, 3);
+          const worstAds = sortedAds.slice(-3).reverse();
+          
+          // Construct full AIInsights structure
+          aiInsights = {
+            insights: {
+              healthScore,
+              quickVerdict: `Account ${metrics.primaryKpiLabel} is ${metrics.primaryKpiValue?.toFixed(2) || 'N/A'}. ${deepInsights.funnelHealth.description}`,
+              quickVerdictTone: verdictTone,
+              bestPerformers: bestAds.map(a => ({
+                id: a.name,
+                reason: metrics.goal === "leads" && a.cpl 
+                  ? `Strong CPL €${a.cpl.toFixed(2)} with ${a.leads} leads`
+                  : metrics.goal === "purchases" && a.roas
+                    ? `Strong ROAS ${a.roas.toFixed(2)}x`
+                    : a.cpc ? `Efficient CPC €${a.cpc.toFixed(2)}` : `Top performer`
+              })),
+              needsAttention: worstAds.map(a => ({
+                id: a.name,
+                reason: metrics.goal === "leads" && a.cpl 
+                  ? `High CPL €${a.cpl.toFixed(2)}`
+                  : metrics.goal === "purchases" && a.roas !== null
+                    ? `Low ROAS ${a.roas.toFixed(2)}x`
+                    : a.cpc ? `High CPC €${a.cpc.toFixed(2)}` : `Needs attention`
+              })),
+              whatsWorking: [],
+              whatsNotWorking: [],
+              deepAnalysis: {
+                funnelHealth: deepInsights.funnelHealth,
+                opportunities: deepInsights.profitOpportunities || [],
+                moneyWasters: deepInsights.budgetLeaks || [],
+                creativeFatigue: []
+              },
+              segmentAnalysis: null
+            }
+          };
+          console.log('✅ AI Insights generated successfully');
        }
     } catch (e) {
       console.error("AI Error:", e);
