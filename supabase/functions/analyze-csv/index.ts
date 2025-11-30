@@ -281,12 +281,24 @@ serve(async (req) => {
     const cpm = totalImps > 0 ? round((totalSpend / totalImps) * 1000, 2) : null;
     const roas = totalRev && totalSpend > 0 ? round(totalRev / totalSpend, 2) : null;
 
-    // --- D. DETECT CAMPAIGN GOAL (STRICT HIERARCHY) ---
+    // --- D. DETECT CONVERSION COLUMNS (CRITICAL: Column existence, not just values) ---
+    // 
+    // This determines if conversion columns EXIST, regardless of whether they have values > 0
+    // If a conversion column exists, we MUST use conversion-based KPIs, even if values are 0
+    //
+    const hasLeadsColumn = !!leadsCol;
+    const hasPurchasesColumn = !!purchCol;
+    const hasRevenueColumn = !!revCol;
+    
+    console.log(`Column Existence Check: hasLeadsColumn=${hasLeadsColumn}, hasPurchasesColumn=${hasPurchasesColumn}, hasRevenueColumn=${hasRevenueColumn}`);
+    
+    // --- E. DETECT CAMPAIGN GOAL (STRICT HIERARCHY) ---
     // 
     // GOAL DETECTION HIERARCHY:
     // 1. Objective column (HIGHEST PRIORITY) - checks for Meta's "Objective" or "Optimization goal" column
     // 2. Campaign/Adset name inference - looks for keywords like "lead", "purchase", "traffic", "awareness"
-    // 3. Event volume analysis - determines goal based on which conversion type has the most activity
+    // 3. Column existence (if leads/purchases columns exist, that's the goal)
+    // 4. Event volume analysis - determines goal based on which conversion type has the most activity
     //
     // GOAL OPTIONS: "leads" | "purchases" | "traffic" | "awareness"
     //
@@ -337,7 +349,19 @@ serve(async (req) => {
       if (goal) console.log(`Goal inferred from names: ${goal}`);
     }
     
-    // STEP 3: Infer from event volumes (which event has highest value)
+    // STEP 3: Check if conversion columns exist (even if values are 0)
+    if (!goal) {
+      // Priority: purchases column > leads column > traffic > awareness
+      if (hasPurchasesColumn) {
+        goal = "purchases";
+        console.log(`Goal set to purchases: Purchase column exists`);
+      } else if (hasLeadsColumn) {
+        goal = "leads";
+        console.log(`Goal set to leads: Leads column exists`);
+      }
+    }
+    
+    // STEP 4: Infer from event volumes (which event has highest value)
     if (!goal) {
       // Find which conversion type has the most spend or volume
       const purchaseScore = totalPurch > 0 ? totalPurch * 10 : 0; // Weight purchases higher
@@ -359,17 +383,21 @@ serve(async (req) => {
       console.log(`Goal inferred from event volumes: ${goal} (Purchases: ${totalPurch}, Leads: ${totalLeads}, Clicks: ${totalClicks})`);
     }
     
-    // --- E. SELECT PRIMARY KPI (NEVER NULL/ZERO) ---
+    // --- F. SELECT PRIMARY KPI (STRICT RULES - NO CTR, CONVERSION COLUMNS ALWAYS WIN) ---
     //
     // PRIMARY KPI SELECTION HIERARCHY:
     //
-    // CRITICAL RULE: Conversions (purchases/leads) ALWAYS take priority over traffic (CPC)
-    // NEVER select CPC as primary KPI if totalPurch > 0 OR totalLeads > 0
+    // CRITICAL RULES:
+    // 1. If conversion columns exist (purchases/leads), ALWAYS use conversion-based KPI, even if values are 0
+    // 2. CTR is FORBIDDEN as primary KPI (only count-based fallbacks allowed)
+    // 3. NEVER select CPC if conversion columns exist
     //
-    // PURCHASES:  ROAS → CPP → Purchase Count → CTR → Impressions
-    // LEADS:      CPL → Lead Count → CTR → Impressions  
-    // TRAFFIC:    CPC → CTR → Click Count → Impressions (only if no conversions)
-    // AWARENESS:  CPM → Impressions
+    // PURCHASES (if purchases column exists):  ROAS (if revenue > 0) → CPP (even if null) → Purchase Count → CPC → Impressions
+    // LEADS (if leads column exists):          CPL (even if null) → Lead Count → CPC → Impressions  
+    // TRAFFIC (only if NO conversion columns): CPC → Click Count → Impressions
+    // AWARENESS:                               CPM → Impressions
+    //
+    // NOTE: CTR is never used as primary KPI under any circumstances
     //
     let primaryKpiKey = "";
     let primaryKpiLabel = "";
@@ -379,9 +407,21 @@ serve(async (req) => {
     
     const revenueAvailable = totalRev > 0;
     const hasConversions = totalPurch > 0 || totalLeads > 0;
+    const hasConversionColumns = hasPurchasesColumn || hasLeadsColumn;
     
-    // STEP 1: Override goal if we have conversions but goal was inferred as traffic
-    // This ensures we never show CPC when there are actual conversions
+    // STEP 1: Override goal if conversion columns exist but goal was inferred as traffic
+    // This ensures we never show CPC when conversion columns are present
+    if (hasConversionColumns && goal === "traffic") {
+      if (hasPurchasesColumn) {
+        goal = "purchases";
+        console.log(`⚠️ Goal override: Purchase column exists, changing from traffic to purchases`);
+      } else if (hasLeadsColumn) {
+        goal = "leads";
+        console.log(`⚠️ Goal override: Leads column exists, changing from traffic to leads`);
+      }
+    }
+    
+    // STEP 1b: Also override if we have actual conversions but goal was traffic
     if (hasConversions && goal === "traffic") {
       if (totalPurch > 0) {
         goal = "purchases";
@@ -392,25 +432,37 @@ serve(async (req) => {
       }
     }
     
-    // STEP 2: Goal-based KPI selection with conversion-first hierarchy
+    // STEP 2: Goal-based KPI selection with STRICT conversion-first hierarchy
     if (goal === "purchases") {
-      // Priority: ROAS → CPP → Purchase Count → CTR → Impressions (NO CPC fallback)
+      // Priority: ROAS → CPP → Purchase Count → CPC → Impressions
+      // CRITICAL: Use CPP even if value is null (spend might be 0), as long as purchases column exists
+      // NEVER use CTR as primary KPI
       if (revenueAvailable && roas !== null && roas > 0) {
         primaryKpiKey = "roas";
         primaryKpiLabel = "ROAS";
         primaryKpiValue = roas;
-      } else if (cpp !== null && cpp > 0 && totalPurch > 0) {
+      } else if (cpp !== null && cpp > 0) {
+        // Use CPP if it's calculable and > 0
         primaryKpiKey = "cpp";
         primaryKpiLabel = "Cost per Purchase";
         primaryKpiValue = cpp;
       } else if (totalPurch > 0) {
+        // Use purchase count if CPP not available but purchases exist
         primaryKpiKey = "purchases";
         primaryKpiLabel = "Total Purchases";
         primaryKpiValue = totalPurch;
-      } else if (ctr !== null && ctr > 0) {
-        primaryKpiKey = "ctr";
-        primaryKpiLabel = "CTR";
-        primaryKpiValue = ctr;
+      } else if (hasPurchasesColumn && totalSpend > 0) {
+        // CRITICAL: Even if purchases = 0, use CPP if column exists and spend > 0
+        // Set CPP to null but still use it as the KPI
+        primaryKpiKey = "cpp";
+        primaryKpiLabel = "Cost per Purchase";
+        primaryKpiValue = null; // Will show as "—" in UI
+        console.log(`⚠️ Using CPP as KPI even though purchases = 0 (purchase column exists)`);
+      } else if (cpc !== null && cpc > 0 && totalClicks > 0) {
+        // Only use CPC if we don't have purchase column
+        primaryKpiKey = "cpc";
+        primaryKpiLabel = "Cost per Click";
+        primaryKpiValue = cpc;
       } else if (totalImps > 0) {
         primaryKpiKey = "impressions";
         primaryKpiLabel = "Impressions";
@@ -430,19 +482,31 @@ serve(async (req) => {
       }
       
     } else if (goal === "leads") {
-      // Priority: CPL → Lead Count → CTR → Impressions (NO CPC fallback)
-      if (cpl !== null && cpl > 0 && totalLeads > 0) {
+      // Priority: CPL → Lead Count → CPC → Impressions
+      // CRITICAL: Use CPL even if value is null (spend might be 0), as long as leads column exists
+      // NEVER use CTR as primary KPI
+      if (cpl !== null && cpl > 0) {
+        // Use CPL if it's calculable and > 0
         primaryKpiKey = "cpl";
         primaryKpiLabel = "Cost per Lead";
         primaryKpiValue = cpl;
       } else if (totalLeads > 0) {
+        // Use lead count if CPL not available but leads exist
         primaryKpiKey = "leads";
         primaryKpiLabel = "Total Leads";
         primaryKpiValue = totalLeads;
-      } else if (ctr !== null && ctr > 0) {
-        primaryKpiKey = "ctr";
-        primaryKpiLabel = "CTR";
-        primaryKpiValue = ctr;
+      } else if (hasLeadsColumn && totalSpend > 0) {
+        // CRITICAL: Even if leads = 0, use CPL if column exists and spend > 0
+        // Set CPL to null but still use it as the KPI
+        primaryKpiKey = "cpl";
+        primaryKpiLabel = "Cost per Lead";
+        primaryKpiValue = null; // Will show as "—" in UI
+        console.log(`⚠️ Using CPL as KPI even though leads = 0 (leads column exists)`);
+      } else if (cpc !== null && cpc > 0 && totalClicks > 0) {
+        // Only use CPC if we don't have leads column
+        primaryKpiKey = "cpc";
+        primaryKpiLabel = "Cost per Click";
+        primaryKpiValue = cpc;
       } else if (totalImps > 0) {
         primaryKpiKey = "impressions";
         primaryKpiLabel = "Impressions";
@@ -462,17 +526,15 @@ serve(async (req) => {
       }
       
     } else if (goal === "traffic") {
-      // CRITICAL: Only use traffic metrics if there are NO conversions
-      // If conversions exist, this code should never be reached due to goal override above
+      // CRITICAL: Only use traffic metrics if there are NO conversion columns
+      // If conversion columns exist, this code should never be reached due to goal override above
+      // NEVER use CTR as primary KPI - only CPC or count-based metrics
       if (cpc !== null && cpc > 0 && totalClicks > 0) {
         primaryKpiKey = "cpc";
         primaryKpiLabel = "Cost per Click";
         primaryKpiValue = cpc;
-      } else if (ctr !== null && ctr > 0) {
-        primaryKpiKey = "ctr";
-        primaryKpiLabel = "CTR";
-        primaryKpiValue = ctr;
       } else if (totalClicks > 0) {
+        // Use click count instead of CTR
         primaryKpiKey = "clicks";
         primaryKpiLabel = "Total Clicks";
         primaryKpiValue = totalClicks;
@@ -508,9 +570,11 @@ serve(async (req) => {
       resultsValue = totalImps > 0 ? totalImps : 0;
     }
     
-    // Sanity check: ensure primary KPI is never null/0/NaN/Infinity
-    if (!primaryKpiKey || primaryKpiValue === null || primaryKpiValue === 0 || isNaN(primaryKpiValue) || !isFinite(primaryKpiValue)) {
-      console.warn(`⚠️ Primary KPI was invalid (${primaryKpiKey}=${primaryKpiValue}), falling back to impressions`);
+    // Sanity check: ensure primary KPI key is set
+    // NOTE: primaryKpiValue CAN be null if we're using CPL/CPP with 0 conversions
+    // This is intentional and correct - it shows "—" in the UI
+    if (!primaryKpiKey) {
+      console.warn(`⚠️ Primary KPI key was not set, falling back to impressions`);
       primaryKpiKey = "impressions";
       primaryKpiLabel = "Impressions";
       primaryKpiValue = totalImps > 0 ? totalImps : 0;
@@ -519,6 +583,12 @@ serve(async (req) => {
         resultsLabel = "Total Impressions";
         resultsValue = totalImps > 0 ? totalImps : 0;
       }
+    }
+    
+    // Additional validation: check for NaN or Infinity (but allow null and 0)
+    if (primaryKpiValue !== null && (isNaN(primaryKpiValue) || !isFinite(primaryKpiValue))) {
+      console.warn(`⚠️ Primary KPI value was NaN or Infinity, setting to null`);
+      primaryKpiValue = null;
     }
     
     // Additional safety: flag if spend is 0 (can't calculate cost metrics)
