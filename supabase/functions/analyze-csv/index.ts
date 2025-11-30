@@ -90,12 +90,9 @@ serve(async (req) => {
     const openAiKey = Deno.env.get('OPENAI_API_KEY')
     console.log(`Analyzing ${file.name} (${csvData.length} rows)`);
 
-    // --- A. Detect Columns (Final, Explicit Mapping + Robust Fallback) ---
-    // Function to normalize headers for robust matching: lowercase, remove non-alphanumeric
+    // --- A. Detect Columns ---
     const headers = Object.keys(csvData[0]).map(h => h.trim());
     const normalizeHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    // Map normalized headers to their original names
     const normalizedHeaders = Object.keys(csvData[0]).map(h => ({
       original: h,
       normalized: normalizeHeader(h),
@@ -103,46 +100,40 @@ serve(async (req) => {
 
     const findCol = (regex: RegExp) => normalizedHeaders.find(h => regex.test(h.normalized))?.original;
 
-    // Use highly specific detection for core metrics
-    let spendCol = findCol(/spend|cost|amount|izterets|terini/);
-    let revCol = findCol(/conversionvalue|purchasevalue|ienakumi|pelnja|vertiba/);
-    let purchCol = findCol(/purchases|results|conversions|pirkumi|rezultati/);
-    let impsCol = findCol(/impressions|paradiessanas|skatijumi/);
-    let clicksCol = findCol(/clicks|klikski/);
-    let nameCol = findCol(/adname|adsetname|campaignname|nosaukums|kampanja/);
+    // Detect all metric columns
+    let spendCol = findCol(/spend|cost|amount|izterets|terini/) || headers.find(h => h.includes('Amount spent'));
+    let revCol = findCol(/conversionvalue|purchasevalue|ienakumi|pelnja|vertiba/) || headers.find(h => h.includes('conversion value'));
+    let purchCol = findCol(/^purchases$|websitepurchases|offlinepurchases|metapurchases/) || headers.find(h => h.includes('Purchases'));
+    let leadsCol = findCol(/^leads$|websiteleads|offlineleads|metaleads/) || headers.find(h => h.includes('Leads'));
+    let resultsCol = findCol(/^results$/) || headers.find(h => h === 'Results');
+    let impsCol = findCol(/impressions|skatijumi/) || headers.find(h => h.includes('Impressions'));
+    let clicksCol = findCol(/clicksall|clicks|klikski/) || headers.find(h => h.includes('Clicks'));
+    let cpcCol = findCol(/cpcall|costperclick/) || headers.find(h => h.includes('CPC'));
+    let ctrCol = findCol(/ctrall|clickthroughrate/) || headers.find(h => h.includes('CTR'));
+    let cplCol = findCol(/costperlead/) || headers.find(h => h.includes('Cost per Lead'));
+    let cppCol = findCol(/costperpurchase/) || headers.find(h => h.includes('Cost per purchase'));
+    let nameCol = findCol(/adname|adsetname|campaignname|nosaukums/) || headers.find(h => h.includes('name'));
 
-    // CRITICAL: Fallback for known headers from user's Meta export
-    // If the aggressive regex failed, assume the most common known header names (including the currency format)
-    if (!spendCol) spendCol = headers.find(h => h.includes('Amount spent (EUR)'));
-    if (!revCol) revCol = headers.find(h => h.includes('Purchases conversion value'));
-    if (!purchCol) purchCol = headers.find(h => h.includes('Purchases'));
-    if (!nameCol) nameCol = headers.find(h => h.includes('Ad name'));
-    if (!clicksCol) clicksCol = headers.find(h => h.includes('Clicks (all)'));
-    if (!impsCol) impsCol = headers.find(h => h.includes('Impressions'));
-
-
-    if (!spendCol || !revCol || !purchCol) {
-        console.error("CRITICAL: Main metrics still not found. Using 0 values.");
-        console.error("DEBUG: Available Headers:", Object.keys(csvData[0]));
-    } else {
-        console.log(`SUCCESS: Found Spend=${spendCol}, Revenue=${revCol}, Purchases=${purchCol}`);
-    }
+    console.log(`Column Detection: Spend=${spendCol}, Revenue=${revCol}, Purchases=${purchCol}, Leads=${leadsCol}, Results=${resultsCol}`);
 
     // --- B. Aggregate Data ---
-    let totalSpend = 0, totalRev = 0, totalPurch = 0, totalImps = 0, totalClicks = 0;
+    let totalSpend = 0, totalRev = 0, totalPurch = 0, totalLeads = 0, totalResults = 0, totalImps = 0, totalClicks = 0;
     const rowMap = new Map();
 
     for (const row of csvData) {
-      // Use the found column names to extract values and run cleanup
       const spend = spendCol ? toNumber(row[spendCol]) : 0;
       const rev = revCol ? toNumber(row[revCol]) : 0;
       const purch = purchCol ? toNumber(row[purchCol]) : 0;
+      const leads = leadsCol ? toNumber(row[leadsCol]) : 0;
+      const results = resultsCol ? toNumber(row[resultsCol]) : 0;
       const imps = impsCol ? toNumber(row[impsCol]) : 0;
       const clicks = clicksCol ? toNumber(row[clicksCol]) : 0;
       
       totalSpend += spend;
       totalRev += rev;
       totalPurch += purch;
+      totalLeads += leads;
+      totalResults += results;
       totalImps += imps;
       totalClicks += clicks;
 
@@ -156,7 +147,69 @@ serve(async (req) => {
       }
     }
     
-    // Rows calculation (Top/Worst logic remains the same)
+    // --- C. Calculate All Metrics ---
+    const ctr = totalImps > 0 ? round((totalClicks / totalImps) * 100, 2) : null;
+    const cpc = totalClicks > 0 ? round(totalSpend / totalClicks, 2) : null;
+    const cpp = totalPurch > 0 ? round(totalSpend / totalPurch, 2) : null;
+    const cpl = totalLeads > 0 ? round(totalSpend / totalLeads, 2) : null;
+    const cpm = totalImps > 0 ? round((totalSpend / totalImps) * 1000, 2) : null;
+    const roas = totalRev && totalSpend > 0 ? round(totalRev / totalSpend, 2) : null;
+
+    // --- D. Determine Primary KPI (Priority: Leads > Purchases > Results) ---
+    let primaryKpiKey = "";
+    let primaryKpiLabel = "";
+    let primaryKpiValue = null;
+    let resultsLabel = "";
+    let resultsValue = null;
+
+    if (totalLeads > 0) {
+      primaryKpiKey = "leads";
+      primaryKpiLabel = "Leads";
+      primaryKpiValue = totalLeads;
+      resultsLabel = "Total Leads";
+      resultsValue = totalLeads;
+    } else if (totalPurch > 0) {
+      primaryKpiKey = "purchases";
+      primaryKpiLabel = "Purchases";
+      primaryKpiValue = totalPurch;
+      resultsLabel = "Total Purchases";
+      resultsValue = totalPurch;
+    } else if (totalResults > 0) {
+      primaryKpiKey = "results";
+      primaryKpiLabel = "Results";
+      primaryKpiValue = totalResults;
+      resultsLabel = "Total Results";
+      resultsValue = totalResults;
+    } else {
+      primaryKpiKey = "results";
+      primaryKpiLabel = "Results";
+      primaryKpiValue = 0;
+      resultsLabel = "Total Results";
+      resultsValue = 0;
+    }
+
+    // Core metrics object matching user's exact structure
+    const metrics = {
+      totalSpend: totalSpend > 0 ? round(totalSpend, 2) : null,
+      totalImpressions: totalImps > 0 ? totalImps : null,
+      totalClicks: totalClicks > 0 ? totalClicks : null,
+      totalPurchases: totalPurch > 0 ? totalPurch : null,
+      totalLeads: totalLeads > 0 ? totalLeads : null,
+      totalRevenue: totalRev > 0 ? round(totalRev, 2) : null,
+      ctr,
+      cpc,
+      cpp,
+      cpl,
+      cpm,
+      roas,
+      primaryKpiKey,
+      primaryKpiLabel,
+      primaryKpiValue,
+      resultsLabel,
+      resultsValue
+    };
+
+    // Rows calculation for AI insights
     const rows = Array.from(rowMap.entries()).map(([name, d]) => ({
         name,
         spend: round(d.spend),
@@ -164,12 +217,11 @@ serve(async (req) => {
         cpa: d.results > 0 ? round(d.spend / d.results) : 0
     }));
 
-    // --- C. Construct AI Payload ---
     const analysisSummary = {
       metrics: {
         spend: round(totalSpend),
-        roas: totalSpend > 0 ? round(totalRev / totalSpend) : 0,
-        cpa: totalPurch > 0 ? round(totalSpend / totalPurch) : 0
+        roas: roas || 0,
+        cpa: cpp || 0
       },
       topPerformers: rows.filter(r => r.spend > 0).sort((a,b) => b.roas - a.roas).slice(0, 3),
       worstPerformers: rows.filter(r => r.spend > 0).sort((a,b) => b.cpa - a.cpa).slice(0, 3),
@@ -241,7 +293,7 @@ serve(async (req) => {
        ok: true,
        rowCount: csvData.length,
        columnNames: Object.keys(csvData[0] || {}),
-       ...analysisSummary.metrics,
+       metrics,
        aiInsights: aiInsights
     };
 
