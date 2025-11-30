@@ -34,6 +34,7 @@ interface InsightItem {
 
 interface AIInsights {
   insights: {
+    healthScore?: number;
     quickVerdict: string;
     quickVerdictTone: "positive" | "negative" | "mixed";
     bestPerformers: { id: string; reason: string }[];
@@ -272,41 +273,30 @@ const Analysis = () => {
               </Card>
             </div>
 
-            {/* Quick Verdict */}
-            <Card 
-              className={`p-6 ${
-                insights?.quickVerdictTone === "positive" 
-                  ? "bg-accent/5 border-accent"
-                  : insights?.quickVerdictTone === "negative"
-                  ? "bg-destructive/5 border-destructive"
-                  : "bg-warning/5 border-warning"
-              }`}
-            >
-              <div className="flex items-start gap-4">
-                <div 
-                  className={`h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                    insights?.quickVerdictTone === "positive"
-                      ? "bg-accent/20"
-                      : insights?.quickVerdictTone === "negative"
-                      ? "bg-destructive/20"
-                      : "bg-warning/20"
-                  }`}
-                >
-                  <Target 
-                    className={`h-5 w-5 ${
-                      insights?.quickVerdictTone === "positive"
-                        ? "text-accent"
-                        : insights?.quickVerdictTone === "negative"
-                        ? "text-destructive"
-                        : "text-warning"
-                    }`}
-                  />
+            {/* Health Score & Verdict */}
+            <Card className="p-6 border-l-4 border-l-primary relative overflow-hidden">
+              <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
+                {/* Score Circle */}
+                <div className="relative flex-shrink-0">
+                  <div className={`h-24 w-24 rounded-full flex items-center justify-center border-4 text-3xl font-bold font-display
+                    ${(insights?.healthScore || 0) >= 80 ? 'border-green-500 text-green-600' : 
+                      (insights?.healthScore || 0) >= 50 ? 'border-yellow-500 text-yellow-600' : 'border-red-500 text-red-600'}`}>
+                    {insights?.healthScore ?? "?"}
+                  </div>
+                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-background px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Score
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-display font-semibold text-foreground mb-2">
-                    Quick Verdict
+                
+                {/* Text */}
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                    AI Verdict
+                    {insights?.quickVerdictTone === 'positive' && <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Healthy</Badge>}
+                    {insights?.quickVerdictTone === 'mixed' && <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Stable</Badge>}
+                    {insights?.quickVerdictTone === 'negative' && <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Critical</Badge>}
                   </h3>
-                  <p className="text-foreground leading-relaxed">
+                  <p className="text-foreground/80 leading-relaxed text-lg">
                     {insights?.quickVerdict || "Waiting for analysis..."}
                   </p>
                 </div>
@@ -501,9 +491,16 @@ const Analysis = () => {
                         <Users className="h-4 w-4 text-primary" />
                         Demographics
                       </h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {insights.segmentAnalysis.demographics || "N/A"}
-                      </p>
+                      {(!insights.segmentAnalysis.demographics || insights.segmentAnalysis.demographics.toLowerCase().includes("no")) ? (
+                        <div className="bg-muted/30 p-3 rounded-lg border border-dashed text-sm text-muted-foreground">
+                          <strong>💡 Missing Data?</strong><br/>
+                          Export your CSV from Meta Ads Manager with <em>"Breakdowns" → "By Delivery" → "Age & Gender"</em> selected.
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {insights.segmentAnalysis.demographics}
+                        </p>
+                      )}
                     </Card>
 
                     {/* Placement */}
@@ -512,9 +509,16 @@ const Analysis = () => {
                         <Monitor className="h-4 w-4 text-blue-500" />
                         Placements
                       </h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {insights.segmentAnalysis.placement || "N/A"}
-                      </p>
+                      {(!insights.segmentAnalysis.placement || insights.segmentAnalysis.placement.toLowerCase().includes("no")) ? (
+                        <div className="bg-muted/30 p-3 rounded-lg border border-dashed text-sm text-muted-foreground">
+                          <strong>💡 Missing Data?</strong><br/>
+                          Export with <em>"Breakdowns" → "By Delivery" → "Placement"</em> to see platform performance.
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {insights.segmentAnalysis.placement}
+                        </p>
+                      )}
                     </Card>
 
                     {/* Time */}
@@ -523,9 +527,16 @@ const Analysis = () => {
                         <Calendar className="h-4 w-4 text-orange-500" />
                         Best Times
                       </h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {insights.segmentAnalysis.time || "N/A"}
-                      </p>
+                      {(!insights.segmentAnalysis.time || insights.segmentAnalysis.time.toLowerCase().includes("no")) ? (
+                        <div className="bg-muted/30 p-3 rounded-lg border border-dashed text-sm text-muted-foreground">
+                          <strong>💡 Missing Data?</strong><br/>
+                          Include date columns in your export to analyze day-of-week performance patterns.
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {insights.segmentAnalysis.time}
+                        </p>
+                      )}
                     </Card>
                   </div>
                 )}

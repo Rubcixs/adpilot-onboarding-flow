@@ -15,6 +15,7 @@ OUTPUT: Valid JSON only. NO conversational text. NO markdown formatting.
 RESPONSE STRUCTURE (Must be exact):
 {
   "insights": {
+    "healthScore": 75,
     "quickVerdict": "Direct summary of performance (e.g. 'Campaigns are profitable with ROAS 3.5').",
     "quickVerdictTone": "positive", 
     "bestPerformers": [
@@ -49,10 +50,11 @@ RESPONSE STRUCTURE (Must be exact):
 }
 
 CRITICAL RULES:
-1. Do NOT write "Here is the JSON".
-2. Do NOT use markdown code fences.
-3. Start response with '{' and end with '}'.
-4. Ensure all JSON syntax is valid (quotes, commas).
+1. Calculate 'healthScore' (0-100) based on ROAS/CPA efficiency vs benchmarks. <50 is bad, 50-79 is okay, >80 is excellent.
+2. Do NOT write "Here is the JSON".
+3. Do NOT use markdown code fences.
+4. Start response with '{' and end with '}'.
+5. Ensure all JSON syntax is valid (quotes, commas).
 `;
 
 serve(async (req) => {
