@@ -49,12 +49,26 @@ RESPONSE STRUCTURE (Must be exact):
   }
 }
 
-CRITICAL RULES:
-1. Calculate 'healthScore' (0-100) based on ROAS/CPA efficiency vs benchmarks. <50 is bad, 50-79 is okay, >80 is excellent.
-2. Do NOT write "Here is the JSON".
-3. Do NOT use markdown code fences.
-4. Start response with '{' and end with '}'.
-5. Ensure all JSON syntax is valid (quotes, commas).
+CRITICAL RULES FOR "deepAnalysis":
+1. **CITE YOUR DATA:** Every single 'description' MUST include specific metrics in parentheses.
+   - BAD: "High CTR but low conversions."
+   - GOOD: "High CTR (2.5%) but low Conversion Rate (0.4%) indicates landing page friction."
+   - BAD: "Scale this campaign."
+   - GOOD: "Scale this campaign (ROAS 4.2 vs Account Avg 2.1)."
+   - Include exact numbers, percentages, or currency values for ALL claims.
+
+2. **Health Score Logic (0-100):** Calculate based on:
+   - ROAS vs Target or Industry Benchmark (40% weight)
+   - CPA vs Target or Account Average (30% weight)
+   - Funnel Efficiency: CTR -> Conversion Rate quality (30% weight)
+   - Score ranges: <50 is critical, 50-79 is stable, ≥80 is excellent.
+
+3. **Funnel Health:** Explicitly state the bottleneck metric and cite the data proving it.
+
+4. Do NOT write "Here is the JSON".
+5. Do NOT use markdown code fences.
+6. Start response with '{' and end with '}'.
+7. Ensure all JSON syntax is valid (quotes, commas).
 `;
 
 serve(async (req) => {

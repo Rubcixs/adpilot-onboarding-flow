@@ -1,10 +1,16 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ChevronLeft, TrendingUp, TrendingDown, AlertCircle, CheckCircle2, Target, Lightbulb, FileSpreadsheet, Banknote, Megaphone, Activity, ArrowRight, Users, Monitor, Calendar } from "lucide-react";
+import { ChevronLeft, TrendingUp, TrendingDown, AlertCircle, CheckCircle2, Target, Lightbulb, FileSpreadsheet, Banknote, Megaphone, Activity, ArrowRight, Users, Monitor, Calendar, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface Metrics {
   totalSpend: number | null;
@@ -283,8 +289,26 @@ const Analysis = () => {
                       (insights?.healthScore || 0) >= 50 ? 'border-yellow-500 text-yellow-600' : 'border-red-500 text-red-600'}`}>
                     {insights?.healthScore ?? "?"}
                   </div>
-                  <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-background px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    Score
+                  {/* Score Label with Tooltip */}
+                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-background px-2 flex items-center gap-1">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Score
+                    </span>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-muted-foreground cursor-help hover:text-foreground transition-colors" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[250px] p-4 text-sm">
+                          <p className="font-semibold mb-2">How is this calculated?</p>
+                          <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
+                            <li><strong>ROAS Efficiency:</strong> Returns on Ad Spend vs account average.</li>
+                            <li><strong>CPA Health:</strong> Cost per Result compared to benchmarks.</li>
+                            <li><strong>Funnel Quality:</strong> CTR and Conversion Rate stability.</li>
+                          </ul>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 </div>
                 
