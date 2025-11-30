@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ChevronLeft, TrendingUp, TrendingDown, AlertCircle, CheckCircle2, Target, Lightbulb, FileSpreadsheet, Banknote, Megaphone, Activity, ArrowRight, Users, Monitor, Calendar, Info } from "lucide-react";
+import { ChevronLeft, TrendingUp, TrendingDown, AlertCircle, CheckCircle2, Target, Lightbulb, FileSpreadsheet, Banknote, Megaphone, Activity, ArrowRight, Users, Monitor, Calendar, Info, Smartphone, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -54,10 +54,10 @@ interface AIInsights {
       creativeFatigue: { title: string; description: string }[];
     };
     segmentAnalysis?: {
-      demographics: string;
-      placement: string;
-      time: string;
-    };
+      demographics: { title: string; finding: string };
+      placement: { title: string; finding: string };
+      time: { title: string; finding: string };
+    } | null;
   };
 }
 
@@ -445,6 +445,52 @@ const Analysis = () => {
                       </Card>
                     )}
 
+                    {/* SEGMENT / PATTERN ANALYSIS */}
+                    {insights.segmentAnalysis && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        
+                        {/* Demographics Card */}
+                        <Card className="p-5 border-l-4 border-l-purple-500 bg-purple-50/5">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="p-2 bg-purple-100 rounded-lg text-purple-600">
+                              <Users className="h-5 w-5" />
+                            </div>
+                            <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Demographics</h4>
+                          </div>
+                          <p className="font-medium text-foreground text-sm leading-relaxed">
+                            {insights.segmentAnalysis.demographics.finding}
+                          </p>
+                        </Card>
+
+                        {/* Placement Card */}
+                        <Card className="p-5 border-l-4 border-l-blue-500 bg-blue-50/5">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
+                              <Smartphone className="h-5 w-5" />
+                            </div>
+                            <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Placement</h4>
+                          </div>
+                          <p className="font-medium text-foreground text-sm leading-relaxed">
+                            {insights.segmentAnalysis.placement.finding}
+                          </p>
+                        </Card>
+
+                        {/* Time Card */}
+                        <Card className="p-5 border-l-4 border-l-orange-500 bg-orange-50/5">
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="p-2 bg-orange-100 rounded-lg text-orange-600">
+                              <CalendarClock className="h-5 w-5" />
+                            </div>
+                            <h4 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">Best Time</h4>
+                          </div>
+                          <p className="font-medium text-foreground text-sm leading-relaxed">
+                            {insights.segmentAnalysis.time.finding}
+                          </p>
+                        </Card>
+                        
+                      </div>
+                    )}
+
                     {/* 2. Financial Grid */}
                     <div className="grid md:grid-cols-2 gap-6">
                       {/* Opportunities */}
@@ -512,65 +558,6 @@ const Analysis = () => {
                     <AlertCircle className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
                     <p className="text-foreground font-medium">Detailed deep dive could not be generated from this data.</p>
                     <p className="text-sm text-muted-foreground mt-1">The AI may need more complete metrics to generate insights.</p>
-                  </div>
-                )}
-
-                {/* SEGMENT ANALYSIS (Optional) - Only if data exists */}
-                {insights?.segmentAnalysis && (
-                  <div className="grid md:grid-cols-3 gap-6 mt-6 pt-6 border-t border-border">
-                    {/* Demographics */}
-                    <Card className="p-6">
-                      <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
-                        <Users className="h-4 w-4 text-primary" />
-                        Demographics
-                      </h3>
-                      {(!insights.segmentAnalysis.demographics || insights.segmentAnalysis.demographics.toLowerCase().includes("no")) ? (
-                        <div className="bg-muted/30 p-3 rounded-lg border border-dashed text-sm text-muted-foreground">
-                          <strong>💡 Missing Data?</strong><br/>
-                          Export your CSV from Meta Ads Manager with <em>"Breakdowns" → "By Delivery" → "Age & Gender"</em> selected.
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground leading-relaxed">
-                          {insights.segmentAnalysis.demographics}
-                        </p>
-                      )}
-                    </Card>
-
-                    {/* Placement */}
-                    <Card className="p-6">
-                      <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
-                        <Monitor className="h-4 w-4 text-blue-500" />
-                        Placements
-                      </h3>
-                      {(!insights.segmentAnalysis.placement || insights.segmentAnalysis.placement.toLowerCase().includes("no")) ? (
-                        <div className="bg-muted/30 p-3 rounded-lg border border-dashed text-sm text-muted-foreground">
-                          <strong>💡 Missing Data?</strong><br/>
-                          Export with <em>"Breakdowns" → "By Delivery" → "Placement"</em> to see platform performance.
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground leading-relaxed">
-                          {insights.segmentAnalysis.placement}
-                        </p>
-                      )}
-                    </Card>
-
-                    {/* Time */}
-                    <Card className="p-6">
-                      <h3 className="font-display font-semibold text-foreground mb-3 flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-orange-500" />
-                        Best Times
-                      </h3>
-                      {(!insights.segmentAnalysis.time || insights.segmentAnalysis.time.toLowerCase().includes("no")) ? (
-                        <div className="bg-muted/30 p-3 rounded-lg border border-dashed text-sm text-muted-foreground">
-                          <strong>💡 Missing Data?</strong><br/>
-                          Include date columns in your export to analyze day-of-week performance patterns.
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground leading-relaxed">
-                          {insights.segmentAnalysis.time}
-                        </p>
-                      )}
-                    </Card>
                   </div>
                 )}
               </>

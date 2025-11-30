@@ -5,24 +5,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// System prompt for AI analysis - Zero-Shot Strict Mode
+// System prompt for AI analysis - Pattern Hunter Mode
 const ADPILOT_BRAIN_WITH_DATA = `You are an API endpoint.
-ROLE: Expert Media Buyer & Data Analyst.
-INPUT: Ad performance metrics (Context, Funnel, Segments, Top/Worst Rows).
+ROLE: Data Analyst & Pattern Hunter.
+INPUT: Ad performance metrics + Segment Breakdowns (Age, Gender, Placement, Day).
 OUTPUT: Valid JSON only.
 
 RESPONSE STRUCTURE (Must be exact JSON):
 {
   "insights": {
     "healthScore": 0,
-    "quickVerdict": "Executive summary of the account performance.",
+    "quickVerdict": "Executive summary of the account status.",
     "quickVerdictTone": "positive" | "negative" | "mixed",
-    "bestPerformers": [
-       { "id": "CAMPAIGN_NAME_FROM_DATA", "reason": "Specific metric (e.g. ROAS 4.1)" }
-    ],
-    "needsAttention": [
-       { "id": "CAMPAIGN_NAME_FROM_DATA", "reason": "Specific metric (e.g. CPA $50)" }
-    ],
+    "bestPerformers": [ { "id": "NAME", "reason": "ROAS 4.x" } ],
+    "needsAttention": [ { "id": "NAME", "reason": "CPA $50" } ],
     "whatsWorking": [
        { "title": "Brief title", "detail": "Specific observation with data" }
     ],
@@ -32,36 +28,41 @@ RESPONSE STRUCTURE (Must be exact JSON):
     "deepAnalysis": {
       "funnelHealth": { 
          "status": "Healthy" | "Leaky" | "Broken", 
-         "title": "Funnel Status", 
-         "description": "Analyze CTR -> CVR flow. YOU MUST CITE METRICS. Example: 'Good CTR (2.1%) and strong CVR (3.5%) shows high intent.'", 
-         "metricToWatch": "The weakest metric (e.g. CPM)" 
+         "title": "Funnel Health", 
+         "description": "Analyze CTR -> CVR flow with specific % metrics.", 
+         "metricToWatch": "CVR" 
       },
       "opportunities": [
-         { "title": "Scale Candidate", "description": "Identify a specific campaign/ad set ready for scale based on ROAS/CPA." }
+         { "title": "Scale Opportunity", "description": "High ROAS campaign with specific metrics", "impact": "High Revenue" }
       ],
       "moneyWasters": [
-         { "title": "Inefficient Spend", "description": "Identify high spenders with poor results." }
+         { "title": "Budget Leak", "description": "High spend / low result with specific numbers", "impact": "Cost Savings" }
       ],
-      "creativeFatigue": [] 
+      "creativeFatigue": []
     },
-    "segmentAnalysis": null
+    "segmentAnalysis": {
+       "demographics": {
+          "title": "Best Audience",
+          "finding": "e.g. 'Women 25-34 are driving 60% of sales at lowest CPA ($12).'"
+       },
+       "placement": {
+          "title": "Top Platform",
+          "finding": "e.g. 'Instagram Stories outperform Feeds by 2x in ROAS.'"
+       },
+       "time": {
+          "title": "Peak Performance",
+          "finding": "e.g. 'Weekends (Sat-Sun) convert 30% better than weekdays.'"
+       }
+    }
   }
 }
 
 CRITICAL RULES:
-1. **NO FAKE DATA:** Never use "Campaign A", "Summer Sale", or placeholder examples. Use ONLY the actual names provided in the 'topPerformers'/'worstPerformers' lists from the input data.
-2. **CITE DATA:** Every single description must include a number in parentheses.
-   - BAD: "Funnel is healthy."
-   - GOOD: "Funnel is healthy with high Conversion Rate (3.5%)."
-   - BAD: "Scale this campaign."
-   - GOOD: "Scale Campaign X (ROAS 4.2 vs Account Avg 2.1)."
-3. **CONSISTENCY:** If 'status' is "Healthy", the description MUST mention positive metrics with numbers. If "Broken", it must mention the drop-off point with numbers.
-4. **Health Score (0-100):** Calculate based on:
-   - ROAS vs Account Average or Industry Benchmark (40% weight)
-   - CPA vs Account Average (30% weight)
-   - Funnel Efficiency: CTR -> Conversion Rate quality (30% weight)
-   - Score ranges: <50 is critical, 50-79 is stable, ≥80 is excellent.
-5. **RAW JSON:** Output only the JSON string. No "Here is the JSON" text. No markdown code fences. First character must be '{', last character must be '}'.
+1. **LOOK FOR PATTERNS:** Use the provided segment data to find the best performing Age, Gender, Placement, and Day.
+2. **CITE DATA:** Every finding MUST include a number (e.g. "CPA $15" or "ROAS 3.2").
+3. **IF DATA MISSING:** If segment data is empty or null, set "segmentAnalysis" to null. Do NOT hallucinate segments.
+4. **NO FAKE DATA:** Use only actual campaign/ad names from topPerformers/worstPerformers lists.
+5. **RAW JSON ONLY:** No markdown. First character '{', last character '}'.
 `;
 
 serve(async (req) => {
