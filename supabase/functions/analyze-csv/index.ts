@@ -87,56 +87,74 @@ Priority: objective column → data-based inference (purchases > leads > traffic
 Never return Infinity or NaN. When denominator is 0, set metric to null.
 NO EXTRA TEXT. ONLY JSON.`;
 
-// 4. COMPREHENSIVE AI INSIGHTS PROMPT
-const ADPILOT_INSIGHTS_SYSTEM = `You are an expert performance marketer and media buyer.
-You receive:
-- Aggregated performance metrics for one ad account (metrics object).
-- CSV structure info (columnNames, rowCount) and optionally a small sample of rows.
+// 4. AI INSIGHTS SYSTEM PROMPT
+const ADPILOT_INSIGHTS_SYSTEM = `You are AdPilot — an AI performance analyst.
+Your job is to analyze Meta ads CSV data and generate:
+1) AI Verdict
+2) Best Performers
+3) Needs Attention
+4) Score (0–100)
 
-Your job is to return a JSON object in a fixed schema called AIInsights that will be parsed directly by the UI.
-Do not add explanations, markdown or prose outside the JSON.
-Only output valid JSON.
+GOAL DETECTION:
+- Use the provided "goal" field if present.
+- If missing, determine goal from the metrics:
+    - If leads > 0 → goal = "leads"
+    - If purchases > 0 → goal = "purchases"
+    - If clicks > 0 → goal = "traffic"
+    - Else → goal = "awareness"
 
-Return your answer in **exactly** this JSON schema:
+PRIMARY KPI RULES:
+- If goal = leads → use CPL (cost_per_lead)
+- If goal = purchases:
+      - If revenue exists → use ROAS
+      - Else → use CPP (cost_per_purchase)
+- If goal = traffic → use CPC
+- If goal = awareness → use CPM
+
+AI VERDICT:
+Create a 1–3 sentence summary:
+- Describe overall performance.
+- Compare primary KPI vs industry norms (if missing, infer reasonable ranges).
+- State clearly whether performance is strong, average, weak, or critical.
+
+SCORE (0–100):
+Use simple rules:
+- Excellent = 85–100
+- Good = 70–85
+- Average = 50–70
+- Weak = 30–50
+- Critical = 0–30
+
+BEST PERFORMERS:
+- Pick top 3 ads based on the PRIMARY KPI.
+- Give each item:
+    {
+      "label": "<ad name>",
+      "badge": "<metric label>"
+    }
+Example badges: "Strong CPL of €4.12", "ROAS 3.2x", "Low CPC €0.18"
+
+NEEDS ATTENTION:
+- Pick bottom 3 ads based on PRIMARY KPI.
+- Same structure, but badge shows the problem:
+    "High CPL of €17.20"
+    "Weak CTR of 0.41%"
+    "Poor ROAS 0.8x"
+
+OUTPUT FORMAT — RETURN EXACTLY THIS JSON:
 
 {
-  "insights": {
-    "healthScore": number,
-    "quickVerdict": "string",
-    "quickVerdictTone": "positive | negative | mixed",
-    "bestPerformers": [{ "id": "string", "reason": "string" }],
-    "needsAttention": [{ "id": "string", "reason": "string" }],
-    "whatsWorking": [{ "title": "string", "detail": "string" }],
-    "whatsNotWorking": [{ "title": "string", "detail": "string" }],
-    "deepAnalysis": {
-      "funnelHealth": {
-        "status": "Healthy | Warning | Broken",
-        "title": "string",
-        "description": "string",
-        "metricToWatch": "string"
-      },
-      "opportunities": [{ "title": "string", "description": "string" }],
-      "moneyWasters": [{ "title": "string", "description": "string" }],
-      "creativeFatigue": [{ "title": "string", "description": "string" }]
-    },
-    "segmentAnalysis": {
-      "demographics": { "title": "string", "finding": "string" },
-      "placement": { "title": "string", "finding": "string" },
-      "time": { "title": "string", "finding": "string" }
-    }
-  }
+  "score": number,
+  "verdict": "string",
+  "bestPerformers": [
+       { "label": "...", "badge": "..." }
+  ],
+  "needsAttention": [
+       { "label": "...", "badge": "..." }
+  ]
 }
 
-Tasks:
-1) Evaluate overall account health on a scale 0–100 → healthScore.
-2) Write a short, human-readable one-sentence verdict → quickVerdict with quickVerdictTone.
-3) Identify 3–5 best performers → bestPerformers with id and reason.
-4) Identify 3–5 items that need attention → needsAttention with id and reason.
-5) Fill whatsWorking and whatsNotWorking: arrays of {title, detail} objects.
-6) Fill deepAnalysis with funnelHealth, opportunities, moneyWasters, creativeFatigue.
-7) Fill segmentAnalysis if segment data is available, otherwise state "data not segmented".
-
-Output only the JSON, nothing else.`;
+Do NOT return explanations. Only JSON.`;
 
 // 5. STRICT AI INSIGHTS PROMPT
 
@@ -784,25 +802,16 @@ serve(async (req) => {
       worstPerformers: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.cpa - a.cpa).slice(0, 5)
     };
 
-    const userPrompt = `Here is the input data for the ad account:
-
-METRICS (already aggregated):
+    const userPrompt = `INPUT DATA (JSON):
 ${JSON.stringify(aiContext.metrics, null, 2)}
 
-CSV SUMMARY:
-- Row count: ${aiContext.csvSummary.rowCount}
-- Columns: ${aiContext.csvSummary.columnNames.join(', ')}
-
-SAMPLE ROWS (first 5):
-${JSON.stringify(aiContext.csvSummary.sampleRows, null, 2)}
-
-TOP PERFORMERS:
+TOP PERFORMERS BY ROAS:
 ${JSON.stringify(aiContext.topPerformers, null, 2)}
 
-WORST PERFORMERS:
+WORST PERFORMERS BY CPA:
 ${JSON.stringify(aiContext.worstPerformers, null, 2)}
 
-Analyze this data and return the complete AIInsights JSON object.`;
+Analyze this data and return the JSON output.`;
 
     // --- H. Call AI (with Math Fallback) ---
     let aiInsights = null;
@@ -838,7 +847,45 @@ Analyze this data and return the complete AIInsights JSON object.`;
       
       if (aiData.content && aiData.content[0]?.text) {
          const cleanedText = cleanJson(aiData.content[0].text);
-         aiInsights = JSON.parse(cleanedText);
+         const rawInsights = JSON.parse(cleanedText);
+         console.log('✅ AI Insights parsed:', rawInsights);
+         
+         // Map simple AI output to full AIInsights structure
+         const verdictTone = rawInsights.score >= 70 ? "positive" : rawInsights.score >= 50 ? "mixed" : "negative";
+         
+         aiInsights = {
+           insights: {
+             healthScore: rawInsights.score,
+             quickVerdict: rawInsights.verdict,
+             quickVerdictTone: verdictTone,
+             bestPerformers: rawInsights.bestPerformers?.map((p: any) => ({
+               id: p.label,
+               reason: p.badge
+             })) || [],
+             needsAttention: rawInsights.needsAttention?.map((p: any) => ({
+               id: p.label,
+               reason: p.badge
+             })) || [],
+             whatsWorking: [],
+             whatsNotWorking: [],
+             deepAnalysis: {
+               funnelHealth: {
+                 status: verdictTone === "positive" ? "Healthy" : verdictTone === "mixed" ? "Warning" : "Broken",
+                 title: "Conversion Funnel",
+                 description: verdictTone === "positive" 
+                   ? "Funnel is converting efficiently with strong metrics."
+                   : verdictTone === "mixed"
+                     ? "Funnel shows moderate performance with room for optimization."
+                     : "Funnel needs immediate attention to reduce costs and improve conversions.",
+                 metricToWatch: metrics.primaryKpiKey?.toUpperCase() || "ROAS"
+               },
+               opportunities: [],
+               moneyWasters: [],
+               creativeFatigue: []
+             },
+             segmentAnalysis: null
+           }
+         };
          console.log('✅ AI Insights generated successfully');
       }
     } catch (e) {
@@ -850,56 +897,41 @@ Analyze this data and return the complete AIInsights JSON object.`;
     // --- I. "Smart Fallback" (If AI failed, generate basic insights) ---
     if (!aiInsights || !aiInsights.insights) {
        console.log("Generating fallback insights...");
-       const roasValue = metrics.roas || 0;
-       const isGood = roasValue > 2;
+       const primaryValue = metrics.primaryKpiValue || 0;
+       const isGood = metrics.goal === "purchases" 
+         ? (metrics.roas && metrics.roas > 2) 
+         : (metrics.goal === "leads" ? (metrics.cpl && metrics.cpl < 10) : true);
+       
+       const score = isGood ? 80 : 40;
+       const verdictTone = score >= 70 ? "positive" : score >= 50 ? "mixed" : "negative";
        
        aiInsights = {
          insights: {
-           healthScore: isGood ? 80 : 40,
+           healthScore: score,
            quickVerdict: isGood 
-             ? `Strong performance with ${roasValue.toFixed(2)}x ROAS. Account is healthy and scaling efficiently.`
-             : `Performance needs optimization. Current ROAS of ${roasValue.toFixed(2)}x is below target.`,
-           quickVerdictTone: isGood ? "positive" : "negative",
+             ? `Performance is strong with healthy ${metrics.primaryKpiLabel} metrics. Account is scaling efficiently.`
+             : `Performance needs optimization. ${metrics.primaryKpiLabel} requires attention to improve efficiency.`,
+           quickVerdictTone: verdictTone,
            bestPerformers: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.roas - a.roas).slice(0, 3)
-             .map((p: any) => ({ id: p.name, reason: `Strong ROAS of ${p.roas.toFixed(2)}x` })),
+             .map((p: any) => ({ id: p.name, reason: `Strong ROAS ${p.roas.toFixed(2)}x` })),
            needsAttention: rows.filter((r: any) => r.spend > 0).sort((a: any, b: any) => b.cpa - a.cpa).slice(0, 3)
-             .map((p: any) => ({ id: p.name, reason: `High CPA of €${p.cpa.toFixed(2)}` })),
-           whatsWorking: isGood ? [
-             { title: "Strong ROAS", detail: `Account achieving ${roasValue.toFixed(2)}x return on ad spend, indicating efficient targeting.` },
-             { title: "Conversion Efficiency", detail: "Top campaigns are converting at healthy rates with manageable acquisition costs." }
-           ] : [],
-           whatsNotWorking: !isGood ? [
-             { title: "Low ROAS", detail: `Current ${roasValue.toFixed(2)}x ROAS is below the 2.0x benchmark for profitable campaigns.` },
-             { title: "High Acquisition Costs", detail: "Cost per acquisition is elevated, suggesting targeting or creative optimization needed." }
-           ] : [],
+             .map((p: any) => ({ id: p.name, reason: `High CPA €${p.cpa.toFixed(2)}` })),
+           whatsWorking: [],
+           whatsNotWorking: [],
            deepAnalysis: {
              funnelHealth: { 
                 status: isGood ? "Healthy" : "Warning", 
                 title: "Conversion Funnel", 
                 description: isGood 
                   ? "Funnel is converting efficiently with strong metrics across the board."
-                  : "Funnel shows leakage with elevated costs. Focus on improving conversion rates and reducing drop-off.", 
+                  : "Funnel shows leakage with elevated costs. Focus on improving conversion rates.", 
                 metricToWatch: metrics.primaryKpiKey?.toUpperCase() || "ROAS"
              },
-             opportunities: isGood ? [
-               { title: "Scale Top Performers", description: "Increase budget on best-performing campaigns to maximize returns." },
-               { title: "Test New Audiences", description: "Expand to lookalike audiences based on converter profiles." }
-             ] : [
-               { title: "Optimize Targeting", description: "Refine audience targeting to reduce wasted spend on non-converters." }
-             ],
-             moneyWasters: !isGood ? [
-               { title: "Underperforming Campaigns", description: "Several campaigns show poor ROAS and should be paused or restructured." },
-               { title: "High CPA Segments", description: "Identify and exclude high-cost, low-converting audience segments." }
-             ] : [],
-             creativeFatigue: [
-               { title: "Creative Refresh Needed", description: "Insufficient data to determine creative fatigue. Monitor CTR trends over time." }
-             ]
+             opportunities: [],
+             moneyWasters: [],
+             creativeFatigue: []
            },
-           segmentAnalysis: {
-             demographics: { title: "Demographics", finding: "Demographic breakdown not available in current dataset." },
-             placement: { title: "Placement", finding: "Placement data not segmented in this export." },
-             time: { title: "Timing", finding: "Time-based performance patterns not available." }
-           }
+           segmentAnalysis: null
          }
        };
     }
