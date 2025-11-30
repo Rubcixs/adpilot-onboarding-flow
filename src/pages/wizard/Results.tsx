@@ -37,8 +37,13 @@ const Results = () => {
   const plan = state?.plan;
   const userInput = state?.userInput || (state as any)?.completeData || {};
   
+  // Robust data access with fail-safes
+  const budget = typeof userInput?.monthlyBudget === 'number' ? userInput.monthlyBudget : 0;
+  const hasBudget = budget > 0;
+  
   console.log("Location state:", state);
   console.log("User Input:", userInput);
+  console.log("Budget:", budget, "Has Budget:", hasBudget);
 
   // Parse the raw AI response to extract the actual data
   const aiData = useMemo(() => {
@@ -168,24 +173,31 @@ const Results = () => {
     ? checklist.map((item: any) => typeof item === 'string' ? item : item.task || item.item || JSON.stringify(item))
     : [];
 
-  // Download strategy as text file
+  // Download Launch Brief as detailed text file
   const handleDownloadStrategy = () => {
     const roadmap = aiData?.Execution_Roadmap || aiData?.execution_roadmap || aiData?.roadmap || aiData?.Roadmap || [];
     const executionSteps = Array.isArray(roadmap) 
-      ? roadmap.map((step: any, i: number) => `${i + 1}. ${typeof step === 'string' ? step : step.step || step.title || step.action || JSON.stringify(step)}`).join('\n')
-      : '';
+      ? roadmap.map((step: any) => `[ ] ${typeof step === 'string' ? step : step.step || step.title || step.action || JSON.stringify(step)}`).join('\n    ')
+      : 'See dashboard for steps';
 
     const creativeStrategy = normalizedCreatives.length > 0
-      ? normalizedCreatives.map((c: any, i: number) => `${i + 1}. ${c.angle}: ${c.description}`).join('\n')
-      : 'Problem/Solution: Address customer pain points\nSocial Proof: Showcase testimonials\nLimited Offer: Create urgency';
+      ? normalizedCreatives.map((c: any) => `\n    * Angle: ${c.angle}\n      Why: ${c.description}`).join('')
+      : '\n    * Angle: Problem/Solution\n      Why: Address customer pain points directly\n    * Angle: Social Proof\n      Why: Showcase testimonials and results';
 
     const budgetBreakdown = displayBudgetAllocation.map((item: any) => {
       const percentage = item.percentage || 50;
-      const amount = typeof userInput.monthlyBudget === 'number' 
-        ? Math.round((percentage / 100) * userInput.monthlyBudget)
-        : null;
-      return `- ${item.platform || item.name}: ${amount ? `${currencySymbol}${amount}` : `${percentage}%`} (${percentage}%)`;
+      const amount = hasBudget ? Math.round((percentage / 100) * budget) : null;
+      const platformName = item.platform || item.name || item.channel || 'Campaign';
+      return `    - ${platformName}: ${percentage}% (approx. ${amount ? `${currencySymbol}${amount}` : 'TBD'})`;
     }).join('\n');
+
+    const targetingInfo = aiData?.Targeting || aiData?.targeting || {};
+    const primaryTarget = typeof targetingInfo === 'object' && !Array.isArray(targetingInfo) 
+      ? targetingInfo.primary || targetingInfo.focus || 'Broad targeting recommended'
+      : normalizedAudiences[0]?.value || 'Broad targeting';
+    const exclusions = typeof targetingInfo === 'object' && !Array.isArray(targetingInfo)
+      ? targetingInfo.exclusions || targetingInfo.exclude || 'Past purchasers (30 days)'
+      : 'Past purchasers (30 days)';
 
     const checklistItems = (normalizedChecklist.length > 0 ? normalizedChecklist : [
       "Create your ad account (Meta Business Manager)",
@@ -195,55 +207,69 @@ const Results = () => {
       "Write compelling ad copy",
       "Set up your target audiences",
       "Launch with a small test budget first",
-    ]).map((item: string, i: number) => `[ ] ${i + 1}. ${item}`).join('\n');
+    ]).map((item: string) => `    [ ] ${item}`).join('\n');
 
     const content = `
-═══════════════════════════════════════════════════════════
-                    ADPILOT STRATEGY BLUEPRINT
+🚀 ADPILOT LAUNCH BRIEF
+========================
+Generated for: ${userInput?.businessName || userInput?.businessType || 'My Business'}
+Target Market: ${userInput?.country || 'Global'}
+Main Goal: ${userInput?.goal || 'Increase conversions'}
+Total Monthly Budget: ${hasBudget ? `${currencySymbol}${budget.toLocaleString()}` : 'Not Set'}
+
 ═══════════════════════════════════════════════════════════
 
-STRATEGY FOR: ${userInput.businessName || userInput.businessType || 'Your Business'}
-GOAL: ${userInput.goal || 'Increase sales/leads'}
-TARGET MARKET: ${userInput.country || 'Not specified'}
-MONTHLY BUDGET: ${typeof userInput.monthlyBudget === 'number' ? `${currencySymbol}${userInput.monthlyBudget.toLocaleString()}` : 'Not specified'}
+💰 BUDGET STRATEGY
+------------------
+Your budget should be split to balance growth and returns:
 
-───────────────────────────────────────────────────────────
-                      BUDGET ALLOCATION
-───────────────────────────────────────────────────────────
 ${budgetBreakdown}
 
-───────────────────────────────────────────────────────────
-                    CREATIVE STRATEGY
-───────────────────────────────────────────────────────────
+═══════════════════════════════════════════════════════════
+
+🎯 AUDIENCE TARGETING
+---------------------
+Primary Focus: ${primaryTarget}
+Who to exclude: ${exclusions}
+
+═══════════════════════════════════════════════════════════
+
+🎨 CREATIVE ANGLES (The "Secret Sauce")
+---------------------------------------
+Don't just run generic ads. Test these specific concepts:
 ${creativeStrategy}
 
-───────────────────────────────────────────────────────────
-                   EXECUTION ROADMAP
-───────────────────────────────────────────────────────────
-${executionSteps || 'Follow the setup checklist below to get started.'}
+═══════════════════════════════════════════════════════════
 
-───────────────────────────────────────────────────────────
-                    SETUP CHECKLIST
-───────────────────────────────────────────────────────────
+📅 EXECUTION PLAN
+-----------------
+    ${executionSteps}
+
+═══════════════════════════════════════════════════════════
+
+✅ SETUP CHECKLIST
+------------------
 ${checklistItems}
 
-───────────────────────────────────────────────────────────
-                      NEXT STEPS
-───────────────────────────────────────────────────────────
+═══════════════════════════════════════════════════════════
+
+📊 NEXT STEPS
+-------------
 1. Complete the setup checklist above
-2. Launch with a small test budget first
+2. Launch with a small test budget (${hasBudget ? `${currencySymbol}${Math.round(budget * 0.2)}` : '20% of budget'}) first
 3. Monitor performance for 3-5 days
 4. Optimize based on initial results
 5. Scale what's working
 
-Generated by AdPilot | ${new Date().toLocaleDateString()}
+═══════════════════════════════════════════════════════════
+(c) ${new Date().getFullYear()} AdPilot AI | Generated ${new Date().toLocaleDateString()}
 `.trim();
 
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'AdPilot_Strategy.txt';
+    a.download = 'AdPilot_Launch_Brief.txt';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -357,9 +383,7 @@ Generated by AdPilot | ${new Date().toLocaleDateString()}
           <div className="space-y-3">
             {displayBudgetAllocation.map((item: any, i: number) => {
               const percentage = item.percentage || 50;
-              const budget = typeof userInput.monthlyBudget === 'number' 
-                ? Math.round((percentage / 100) * userInput.monthlyBudget) 
-                : null;
+              const allocatedAmount = hasBudget ? Math.round((percentage / 100) * budget) : null;
               return (
                 <div key={i} className="p-4 rounded-lg bg-muted/50 border border-border">
                   <div className="flex items-center justify-between mb-2">
@@ -368,10 +392,10 @@ Generated by AdPilot | ${new Date().toLocaleDateString()}
                       <p className="text-xs text-muted-foreground mt-1">{item.reason || item.description || ""}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-lg font-semibold text-foreground">
-                        {budget !== null ? formatCurrency(budget) : `${percentage}%`}
-                      </p>
-                      <Badge variant="outline">{percentage}%</Badge>
+                      <span className="font-bold text-lg text-foreground">
+                        {hasBudget ? formatCurrency(allocatedAmount) : `${percentage}%`}
+                      </span>
+                      <p className="text-xs text-muted-foreground">({percentage}% of budget)</p>
                     </div>
                   </div>
                   <div className="h-2 bg-border rounded-full overflow-hidden">
