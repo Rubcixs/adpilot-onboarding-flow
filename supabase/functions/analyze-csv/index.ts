@@ -834,6 +834,8 @@ Analyze this data and return the complete AIInsights JSON object.`;
       }
 
       const aiData = await response.json();
+      console.log("AI RAW RESPONSE:", JSON.stringify(aiData, null, 2));
+      
       if (aiData.content && aiData.content[0]?.text) {
          const cleanedText = cleanJson(aiData.content[0].text);
          aiInsights = JSON.parse(cleanedText);
@@ -911,6 +913,7 @@ Analyze this data and return the complete AIInsights JSON object.`;
        aiInsights: aiInsights
     };
 
+    console.log("FINAL RESPONSE:", JSON.stringify(finalResponse, null, 2));
     return new Response(JSON.stringify(finalResponse), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
   } catch (error) {
