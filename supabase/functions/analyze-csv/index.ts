@@ -293,12 +293,21 @@ serve(async (req) => {
     }
     
     // Third try: infer from conversion volumes
+    // CRITICAL RULE: If totalLeads > 0 and purchases = 0, MUST choose "leads"
     if (!goal) {
-      if (totalPurch > 0 && totalPurch >= totalLeads) goal = "purchases";
-      else if (totalLeads > 0) goal = "leads";
-      else if (totalClicks > 0) goal = "traffic";
-      else if (totalImps > 0) goal = "awareness";
-      else goal = "awareness"; // default fallback
+      if (totalLeads > 0 && totalPurch === 0) {
+        goal = "leads";
+      } else if (totalPurch > 0) {
+        goal = "purchases";
+      } else if (totalLeads > 0) {
+        goal = "leads";
+      } else if (totalClicks > 0) {
+        goal = "traffic";
+      } else if (totalImps > 0) {
+        goal = "awareness";
+      } else {
+        goal = "awareness"; // default fallback
+      }
     }
     
     console.log(`Detected Goal: ${goal} (Purchases: ${totalPurch}, Leads: ${totalLeads}, Clicks: ${totalClicks})`);
