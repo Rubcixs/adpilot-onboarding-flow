@@ -272,122 +272,124 @@ serve(async (req) => {
     const cpm = totalImps > 0 ? round((totalSpend / totalImps) * 1000, 2) : null;
     const roas = totalRev && totalSpend > 0 ? round(totalRev / totalSpend, 2) : null;
 
-    // --- D. Detect Campaign Goal (EXACT HIERARCHY) ---
+    // --- D. DETECT CAMPAIGN GOAL (STRICT HIERARCHY) ---
+    // 
+    // GOAL DETECTION HIERARCHY:
+    // 1. Objective column (HIGHEST PRIORITY) - checks for Meta's "Objective" or "Optimization goal" column
+    // 2. Campaign/Adset name inference - looks for keywords like "lead", "purchase", "traffic", "awareness"
+    // 3. Event volume analysis - determines goal based on which conversion type has the most activity
+    //
+    // GOAL OPTIONS: "leads" | "purchases" | "traffic" | "awareness"
+    //
     let goal = "";
     
-    // STEP 1: Check objective column (highest priority)
+    // STEP 1: Check objective column (HIGHEST PRIORITY)
     if (objectiveCol && csvData.length > 0) {
-      const firstObjective = String(csvData[0][objectiveCol] || '').toUpperCase();
+      const objective = String(csvData[0][objectiveCol] || '').toUpperCase();
       
-      if (firstObjective.includes('LEAD')) {
+      if (objective.includes('LEAD')) {
         goal = "leads";
-      } else if (firstObjective.includes('CONVERSION') || firstObjective.includes('PURCHASE') || firstObjective.includes('SALES')) {
+      } else if (objective.includes('CONVERSION') || objective.includes('PURCHASE') || objective.includes('SALES')) {
         goal = "purchases";
-      } else if (firstObjective.includes('TRAFFIC')) {
+      } else if (objective.includes('TRAFFIC')) {
         goal = "traffic";
-      } else if (firstObjective.includes('REACH') || firstObjective.includes('AWARENESS')) {
+      } else if (objective.includes('REACH') || objective.includes('AWARENESS')) {
         goal = "awareness";
       }
+      
+      console.log(`Goal from Objective column: ${goal} (Objective: ${objective})`);
     }
     
-    // STEP 2: If objective missing, check campaign/adset names for keywords
-    if (!goal) {
-      const checkForLeadKeywords = (text: string) => {
-        const lower = text.toLowerCase();
-        return lower.includes('lead') || 
-               lower.includes('leadgen') || 
-               lower.includes('lead gen') || 
-               lower.includes('lg') || 
-               lower.includes('instant form') || 
-               lower.includes('form') || 
-               lower.includes('registration');
-      };
+    // STEP 2: Infer from campaign/adset names if objective missing or unclear
+    if (!goal && csvData.length > 0) {
+      // Check all rows for consistent naming patterns
+      const allCampaignNames = campaignNameForGoal 
+        ? csvData.map(r => String(r[campaignNameForGoal] || '').toLowerCase()).filter(Boolean)
+        : [];
+      const allAdsetNames = adsetNameForGoal
+        ? csvData.map(r => String(r[adsetNameForGoal] || '').toLowerCase()).filter(Boolean)
+        : [];
       
-      const checkForPurchaseKeywords = (text: string) => {
-        const lower = text.toLowerCase();
-        return lower.includes('purchase') || 
-               lower.includes('sales') || 
-               lower.includes('pirkumi') ||
-               lower.includes('conversion');
-      };
+      const allNames = [...allCampaignNames, ...allAdsetNames].join(' ');
       
-      const checkForTrafficKeywords = (text: string) => {
-        const lower = text.toLowerCase();
-        return lower.includes('traffic') || lower.includes('trafiks');
-      };
-      
-      const checkForAwarenessKeywords = (text: string) => {
-        const lower = text.toLowerCase();
-        return lower.includes('awareness') || lower.includes('reach');
-      };
-      
-      // Check campaign name first
-      if (campaignNameForGoal && csvData.length > 0) {
-        const campaignName = String(csvData[0][campaignNameForGoal] || '');
-        if (checkForLeadKeywords(campaignName)) goal = "leads";
-        else if (checkForPurchaseKeywords(campaignName)) goal = "purchases";
-        else if (checkForTrafficKeywords(campaignName)) goal = "traffic";
-        else if (checkForAwarenessKeywords(campaignName)) goal = "awareness";
-      }
-      
-      // Check adset name if still no goal
-      if (!goal && adsetNameForGoal && csvData.length > 0) {
-        const adsetName = String(csvData[0][adsetNameForGoal] || '');
-        if (checkForLeadKeywords(adsetName)) goal = "leads";
-        else if (checkForPurchaseKeywords(adsetName)) goal = "purchases";
-        else if (checkForTrafficKeywords(adsetName)) goal = "traffic";
-        else if (checkForAwarenessKeywords(adsetName)) goal = "awareness";
-      }
-    }
-    
-    // STEP 3: If goal still unknown, infer from events in CSV
-    if (!goal) {
-      if (totalLeads > 0 && totalPurch === 0) {
+      // Priority order: leads > purchases > traffic > awareness
+      if (allNames.includes('lead') || allNames.includes('leadgen') || allNames.includes('lead gen') || 
+          allNames.includes('instant form') || allNames.includes('form') || allNames.includes('registration')) {
         goal = "leads";
-      } else if (totalPurch > 0) {
+      } else if (allNames.includes('purchase') || allNames.includes('sales') || allNames.includes('pirkumi') || 
+                 allNames.includes('conversion') || allNames.includes('shop')) {
         goal = "purchases";
-      } else if (totalLeads > 0) {
+      } else if (allNames.includes('traffic') || allNames.includes('trafiks') || allNames.includes('clicks')) {
+        goal = "traffic";
+      } else if (allNames.includes('awareness') || allNames.includes('reach') || allNames.includes('brand')) {
+        goal = "awareness";
+      }
+      
+      if (goal) console.log(`Goal inferred from names: ${goal}`);
+    }
+    
+    // STEP 3: Infer from event volumes (which event has highest value)
+    if (!goal) {
+      // Find which conversion type has the most spend or volume
+      const purchaseScore = totalPurch > 0 ? totalPurch * 10 : 0; // Weight purchases higher
+      const leadScore = totalLeads > 0 ? totalLeads * 5 : 0;
+      const clickScore = totalClicks > 0 ? totalClicks * 1 : 0;
+      
+      if (purchaseScore >= leadScore && purchaseScore >= clickScore && totalPurch > 0) {
+        goal = "purchases";
+      } else if (leadScore >= purchaseScore && leadScore >= clickScore && totalLeads > 0) {
         goal = "leads";
       } else if (totalClicks > 0) {
         goal = "traffic";
       } else if (totalImps > 0) {
         goal = "awareness";
       } else {
-        goal = "awareness"; // default fallback
+        goal = "awareness"; // ultimate fallback
       }
+      
+      console.log(`Goal inferred from event volumes: ${goal} (Purchases: ${totalPurch}, Leads: ${totalLeads}, Clicks: ${totalClicks})`);
     }
     
-    console.log(`Detected Goal: ${goal} (Purchases: ${totalPurch}, Leads: ${totalLeads}, Clicks: ${totalClicks})`);
-    
-    // --- E. Smart Primary KPI Selection with Data Quality Guardrails ---
+    // --- E. SELECT PRIMARY KPI (NEVER NULL/ZERO) ---
+    //
+    // PRIMARY KPI SELECTION LOGIC BY GOAL:
+    //
+    // PURCHASES:  ROAS → CPP → Purchase Count → CPC → CTR → Impressions
+    // LEADS:      CPL → Lead Count → CPC → CTR → Impressions
+    // TRAFFIC:    CPC → CTR → Click Count → Impressions
+    // AWARENESS:  CPM → Impressions
+    //
+    // Each KPI is validated to ensure denominator > 0 before selection
+    // Falls back to next option if current option is null/0/invalid
+    //
     let primaryKpiKey = "";
     let primaryKpiLabel = "";
     let primaryKpiValue: number | null = null;
     let resultsLabel = "";
     let resultsValue: number | null = null;
     
-    const revenueAvailable = totalRev && totalRev > 0;
+    const revenueAvailable = totalRev > 0;
     
-    // Map goal to ideal KPI, then apply fallback chain with data quality checks
+    // GOAL-BASED KPI SELECTION WITH FALLBACK CHAINS
     if (goal === "purchases") {
-      // Ideal: ROAS (if revenue available) or CPP
-      if (revenueAvailable && roas && roas > 0 && totalSpend > 0) {
+      // Try: ROAS → CPP → Purchase Count → CPC → CTR → Impressions
+      if (revenueAvailable && roas !== null && roas > 0) {
         primaryKpiKey = "roas";
         primaryKpiLabel = "ROAS";
         primaryKpiValue = roas;
-      } else if (cpp && cpp > 0 && totalPurch > 0 && totalSpend > 0) {
+      } else if (cpp !== null && cpp > 0 && totalPurch > 0) {
         primaryKpiKey = "cpp";
         primaryKpiLabel = "Cost per Purchase";
         primaryKpiValue = cpp;
       } else if (totalPurch > 0) {
         primaryKpiKey = "purchases";
-        primaryKpiLabel = "Purchases";
+        primaryKpiLabel = "Total Purchases";
         primaryKpiValue = totalPurch;
-      } else if (cpc && cpc > 0 && totalClicks > 0 && totalSpend > 0) {
+      } else if (cpc !== null && cpc > 0 && totalClicks > 0) {
         primaryKpiKey = "cpc";
         primaryKpiLabel = "Cost per Click";
         primaryKpiValue = cpc;
-      } else if (ctr && ctr > 0 && totalClicks > 0 && totalImps > 0) {
+      } else if (ctr !== null && ctr > 0) {
         primaryKpiKey = "ctr";
         primaryKpiLabel = "CTR";
         primaryKpiValue = ctr;
@@ -397,24 +399,33 @@ serve(async (req) => {
         primaryKpiValue = totalImps;
       }
       
-      resultsLabel = "Total Purchases";
-      resultsValue = totalPurch > 0 ? totalPurch : 0;
+      // Results card
+      if (totalPurch > 0) {
+        resultsLabel = "Total Purchases";
+        resultsValue = totalPurch;
+      } else if (totalClicks > 0) {
+        resultsLabel = "Total Clicks";
+        resultsValue = totalClicks;
+      } else {
+        resultsLabel = "Total Results";
+        resultsValue = 0;
+      }
       
     } else if (goal === "leads") {
-      // Ideal: CPL
-      if (cpl && cpl > 0 && totalLeads > 0 && totalSpend > 0) {
+      // Try: CPL → Lead Count → CPC → CTR → Impressions
+      if (cpl !== null && cpl > 0 && totalLeads > 0) {
         primaryKpiKey = "cpl";
         primaryKpiLabel = "Cost per Lead";
         primaryKpiValue = cpl;
       } else if (totalLeads > 0) {
         primaryKpiKey = "leads";
-        primaryKpiLabel = "Leads";
+        primaryKpiLabel = "Total Leads";
         primaryKpiValue = totalLeads;
-      } else if (cpc && cpc > 0 && totalClicks > 0 && totalSpend > 0) {
+      } else if (cpc !== null && cpc > 0 && totalClicks > 0) {
         primaryKpiKey = "cpc";
         primaryKpiLabel = "Cost per Click";
         primaryKpiValue = cpc;
-      } else if (ctr && ctr > 0 && totalClicks > 0 && totalImps > 0) {
+      } else if (ctr !== null && ctr > 0) {
         primaryKpiKey = "ctr";
         primaryKpiLabel = "CTR";
         primaryKpiValue = ctr;
@@ -424,22 +435,31 @@ serve(async (req) => {
         primaryKpiValue = totalImps;
       }
       
-      resultsLabel = "Total Leads";
-      resultsValue = totalLeads > 0 ? totalLeads : 0;
+      // Results card
+      if (totalLeads > 0) {
+        resultsLabel = "Total Leads";
+        resultsValue = totalLeads;
+      } else if (totalClicks > 0) {
+        resultsLabel = "Total Clicks";
+        resultsValue = totalClicks;
+      } else {
+        resultsLabel = "Total Results";
+        resultsValue = 0;
+      }
       
     } else if (goal === "traffic") {
-      // Ideal: CPC
-      if (cpc && cpc > 0 && totalClicks > 0 && totalSpend > 0) {
+      // Try: CPC → CTR → Click Count → Impressions
+      if (cpc !== null && cpc > 0 && totalClicks > 0) {
         primaryKpiKey = "cpc";
         primaryKpiLabel = "Cost per Click";
         primaryKpiValue = cpc;
-      } else if (ctr && ctr > 0 && totalClicks > 0 && totalImps > 0) {
+      } else if (ctr !== null && ctr > 0) {
         primaryKpiKey = "ctr";
         primaryKpiLabel = "CTR";
         primaryKpiValue = ctr;
       } else if (totalClicks > 0) {
         primaryKpiKey = "clicks";
-        primaryKpiLabel = "Clicks";
+        primaryKpiLabel = "Total Clicks";
         primaryKpiValue = totalClicks;
       } else if (totalImps > 0) {
         primaryKpiKey = "impressions";
@@ -447,12 +467,18 @@ serve(async (req) => {
         primaryKpiValue = totalImps;
       }
       
-      resultsLabel = "Total Clicks";
-      resultsValue = totalClicks > 0 ? totalClicks : 0;
+      // Results card
+      if (totalClicks > 0) {
+        resultsLabel = "Total Clicks";
+        resultsValue = totalClicks;
+      } else {
+        resultsLabel = "Total Results";
+        resultsValue = 0;
+      }
       
     } else { // awareness
-      // Ideal: CPM
-      if (cpm && cpm > 0 && totalImps > 0 && totalSpend > 0) {
+      // Try: CPM → Impressions
+      if (cpm !== null && cpm > 0 && totalImps > 0) {
         primaryKpiKey = "cpm";
         primaryKpiLabel = "CPM";
         primaryKpiValue = cpm;
@@ -462,20 +488,32 @@ serve(async (req) => {
         primaryKpiValue = totalImps;
       }
       
+      // Results card
       resultsLabel = "Total Impressions";
       resultsValue = totalImps > 0 ? totalImps : 0;
     }
     
-    // Ultimate fallback if nothing worked
-    if (!primaryKpiKey || primaryKpiValue === null || primaryKpiValue === 0) {
+    // Sanity check: ensure primary KPI is never null/0/NaN/Infinity
+    if (!primaryKpiKey || primaryKpiValue === null || primaryKpiValue === 0 || isNaN(primaryKpiValue) || !isFinite(primaryKpiValue)) {
+      console.warn(`⚠️ Primary KPI was invalid (${primaryKpiKey}=${primaryKpiValue}), falling back to impressions`);
       primaryKpiKey = "impressions";
       primaryKpiLabel = "Impressions";
       primaryKpiValue = totalImps > 0 ? totalImps : 0;
-      resultsLabel = "Total Impressions";
-      resultsValue = totalImps > 0 ? totalImps : 0;
+      
+      if (resultsValue === null || resultsValue === 0) {
+        resultsLabel = "Total Impressions";
+        resultsValue = totalImps > 0 ? totalImps : 0;
+      }
     }
     
-    console.log(`Primary KPI: ${primaryKpiLabel} (${primaryKpiKey}) = ${primaryKpiValue}`);
+    // Additional safety: flag if spend is 0 (can't calculate cost metrics)
+    if (totalSpend === 0) {
+      console.warn(`⚠️ Warning: Total Spend is 0. Cost-based KPIs (CPC, CPL, CPP, CPM) will be null.`);
+    }
+    
+    console.log(`✅ Goal Detection Complete: ${goal}`);
+    console.log(`✅ Primary KPI: ${primaryKpiLabel} (${primaryKpiKey}) = ${primaryKpiValue}`);
+    console.log(`✅ Results Metric: ${resultsLabel} = ${resultsValue}`);
 
     // --- F. Core metrics object matching user's exact structure ---
     const metrics = {
