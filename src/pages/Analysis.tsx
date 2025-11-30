@@ -1,16 +1,30 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { ChevronLeft, TrendingUp, TrendingDown, AlertCircle, CheckCircle2, Target, Lightbulb, FileSpreadsheet, Banknote, Megaphone, Activity, ArrowRight, Users, Monitor, Calendar, Info, Smartphone, CalendarClock } from "lucide-react";
+import {
+  ChevronLeft,
+  TrendingUp,
+  TrendingDown,
+  AlertCircle,
+  CheckCircle2,
+  Target,
+  Lightbulb,
+  FileSpreadsheet,
+  Banknote,
+  Megaphone,
+  Activity,
+  ArrowRight,
+  Users,
+  Monitor,
+  Calendar,
+  Info,
+  Smartphone,
+  CalendarClock,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Metrics {
   totalSpend: number | null;
@@ -33,11 +47,6 @@ interface Metrics {
   resultsValue?: number | null;
 }
 
-interface InsightItem {
-  title: string;
-  detail: string;
-}
-
 interface AIInsights {
   insights: {
     healthScore?: number;
@@ -45,13 +54,11 @@ interface AIInsights {
     quickVerdictTone: "positive" | "negative" | "mixed";
     bestPerformers: { id: string; reason: string }[];
     needsAttention: { id: string; reason: string }[];
-    whatsWorking: InsightItem[];
-    whatsNotWorking: InsightItem[];
     deepAnalysis?: {
       funnelHealth: { status: string; title: string; description: string; metricToWatch: string };
-      opportunities: { title: string; description: string }[];
-      moneyWasters: { title: string; description: string }[];
-      creativeFatigue: { title: string; description: string }[];
+      opportunities: { title: string; description: string; impact?: string }[];
+      moneyWasters: { title: string; description: string; impact?: string }[];
+      creativeFatigue: { title: string; description: string; impact?: string }[];
     };
     segmentAnalysis?: {
       demographics: { title: string; finding: string };
@@ -61,6 +68,14 @@ interface AIInsights {
   };
 }
 
+interface LocationState {
+  rowCount?: number;
+  columnNames?: string[];
+  platform?: string;
+  dataLevel?: string;
+  metrics?: Metrics;
+  aiInsights?: AIInsights | null;
+}
 
 interface LocationState {
   rowCount?: number;
@@ -102,17 +117,17 @@ const formatRoas = (value: number | null): string => {
 
 const formatPrimaryKpi = (value: number | null, kpiKey?: string): string => {
   if (value === null || value === undefined) return "—";
-  
+
   // Currency format for cost metrics
   if (kpiKey === "cpl" || kpiKey === "cpp" || kpiKey === "cpc" || kpiKey === "cpm") {
     return formatCurrency(value);
   }
-  
+
   // ROAS as plain number
   if (kpiKey === "roas") {
     return value.toFixed(2);
   }
-  
+
   // Default: number with 2 decimals
   return value.toFixed(2);
 };
@@ -124,7 +139,7 @@ const Analysis = () => {
   const metrics = state?.metrics;
   const aiInsights = state?.aiInsights;
   const aiInsightsError = state?.aiInsightsError;
-  
+
   // Use insights directly from navigation state
   const insights = aiInsights?.insights;
   const hasAiInsights = !!insights;
@@ -139,19 +154,13 @@ const Analysis = () => {
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <Button
-              variant="ghost"
-              onClick={() => navigate("/")}
-              className="gap-2"
-            >
+            <Button variant="ghost" onClick={() => navigate("/")} className="gap-2">
               <ChevronLeft className="h-4 w-4" />
               Back to Home
             </Button>
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-lg bg-gradient-primary" />
-              <span className="text-xl font-display font-semibold text-foreground">
-                AdPilot
-              </span>
+              <span className="text-xl font-display font-semibold text-foreground">AdPilot</span>
             </div>
             <Button variant="outline">Export Report</Button>
           </div>
@@ -160,9 +169,7 @@ const Analysis = () => {
 
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8 animate-fade-in">
-          <h1 className="text-3xl font-display font-bold text-foreground mb-2">
-            Performance Analysis
-          </h1>
+          <h1 className="text-3xl font-display font-bold text-foreground mb-2">Performance Analysis</h1>
           <p className="text-muted-foreground">
             {state?.platform || "Meta Ads"} • {state?.dataLevel || "Campaign Level"} • Last 30 days
           </p>
@@ -176,9 +183,7 @@ const Analysis = () => {
                 <FileSpreadsheet className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <h3 className="font-display font-semibold text-foreground mb-2">
-                  CSV Data Summary
-                </h3>
+                <h3 className="font-display font-semibold text-foreground mb-2">CSV Data Summary</h3>
                 <p className="text-foreground mb-1">
                   <span className="text-muted-foreground">Total rows:</span>{" "}
                   <span className="font-semibold">{state.rowCount}</span>
@@ -200,9 +205,7 @@ const Analysis = () => {
                 <AlertCircle className="h-5 w-5 text-muted-foreground" />
               </div>
               <div className="flex-1">
-                <h3 className="font-display font-semibold text-foreground mb-3">
-                  Debug Metrics
-                </h3>
+                <h3 className="font-display font-semibold text-foreground mb-3">Debug Metrics</h3>
                 <pre className="text-xs font-mono whitespace-pre-wrap bg-background/50 p-4 rounded-lg overflow-x-auto">
                   {JSON.stringify(metrics, null, 2)}
                 </pre>
@@ -231,37 +234,32 @@ const Analysis = () => {
               </Card>
 
               <Card className="p-4">
-                <p className="text-sm text-muted-foreground mb-1">
-                  {metrics?.primaryKpiLabel || "Primary KPI"}
-                </p>
+                <p className="text-sm text-muted-foreground mb-1">{metrics?.primaryKpiLabel || "Primary KPI"}</p>
                 <p className="text-2xl font-display font-bold text-foreground">
                   {formatPrimaryKpi(
-                    metrics?.primaryKpiValue ?? (metrics?.primaryKpiKey ? (metrics as any)[metrics.primaryKpiKey] : null),
-                    metrics?.primaryKpiKey
+                    metrics?.primaryKpiValue ??
+                      (metrics?.primaryKpiKey ? (metrics as any)[metrics.primaryKpiKey] : null),
+                    metrics?.primaryKpiKey,
                   )}
                 </p>
               </Card>
 
               <Card className="p-4">
                 <p className="text-sm text-muted-foreground mb-1">
-                  {metrics?.roas !== null && metrics?.roas !== undefined
-                    ? "ROAS"
-                    : metrics?.resultsLabel || "Results"}
+                  {metrics?.roas !== null && metrics?.roas !== undefined ? "ROAS" : metrics?.resultsLabel || "Results"}
                 </p>
                 <p className="text-2xl font-display font-bold text-foreground">
                   {metrics?.roas !== null && metrics?.roas !== undefined
                     ? formatRoas(metrics.roas)
                     : metrics?.resultsValue !== null && metrics?.resultsValue !== undefined
-                    ? formatNumber(metrics.resultsValue)
-                    : "—"}
+                      ? formatNumber(metrics.resultsValue)
+                      : "—"}
                 </p>
               </Card>
 
               <Card className="p-4">
                 <p className="text-sm text-muted-foreground mb-1">CTR</p>
-                <p className="text-2xl font-display font-bold text-foreground">
-                  {formatPercent(metrics?.ctr ?? null)}
-                </p>
+                <p className="text-2xl font-display font-bold text-foreground">{formatPercent(metrics?.ctr ?? null)}</p>
               </Card>
 
               <Card className="p-4">
@@ -284,27 +282,38 @@ const Analysis = () => {
               <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
                 {/* Score Circle (Clean, no icon) */}
                 <div className="relative flex-shrink-0">
-                  <div className={`h-24 w-24 rounded-full flex items-center justify-center border-4 text-3xl font-bold font-display
-                    ${(insights?.healthScore || 0) >= 80 ? 'border-green-500 text-green-600' : 
-                      (insights?.healthScore || 0) >= 50 ? 'border-yellow-500 text-yellow-600' : 'border-red-500 text-red-600'}`}>
+                  <div
+                    className={`h-24 w-24 rounded-full flex items-center justify-center border-4 text-3xl font-bold font-display
+                    ${
+                      (insights?.healthScore || 0) >= 80
+                        ? "border-green-500 text-green-600"
+                        : (insights?.healthScore || 0) >= 50
+                          ? "border-yellow-500 text-yellow-600"
+                          : "border-red-500 text-red-600"
+                    }`}
+                  >
                     {insights?.healthScore ?? "?"}
                   </div>
                   <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-background px-2">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Score
-                    </span>
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Score</span>
                   </div>
                 </div>
-                
+
                 {/* Text Section with Icon next to Badge */}
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="text-lg font-semibold">AI Verdict</h3>
-                    
+
                     {/* Status Badge */}
-                    {insights?.quickVerdictTone === 'positive' && <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Healthy</Badge>}
-                    {insights?.quickVerdictTone === 'mixed' && <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Stable</Badge>}
-                    {insights?.quickVerdictTone === 'negative' && <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Critical</Badge>}
+                    {insights?.quickVerdictTone === "positive" && (
+                      <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Healthy</Badge>
+                    )}
+                    {insights?.quickVerdictTone === "mixed" && (
+                      <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Stable</Badge>
+                    )}
+                    {insights?.quickVerdictTone === "negative" && (
+                      <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Critical</Badge>
+                    )}
 
                     {/* Info Icon & Tooltip */}
                     <TooltipProvider>
@@ -314,14 +323,26 @@ const Analysis = () => {
                             <Info className="h-4 w-4 text-muted-foreground hover:text-primary cursor-help" />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent side="right" align="start" className="w-[300px] sm:w-[400px] p-4 text-sm bg-popover border shadow-xl z-50">
+                        <TooltipContent
+                          side="right"
+                          align="start"
+                          className="w-[300px] sm:w-[400px] p-4 text-sm bg-popover border shadow-xl z-50"
+                        >
                           <div className="space-y-3">
                             <h4 className="font-semibold text-base border-b pb-2">How is this calculated?</h4>
-                            <p className="text-muted-foreground">The Health Score (0-100) is an AI-weighted metric based on:</p>
+                            <p className="text-muted-foreground">
+                              The Health Score (0-100) is an AI-weighted metric based on:
+                            </p>
                             <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
-                              <li><strong>Efficiency (40%):</strong> comparing your ROAS/CPA against industry benchmarks.</li>
-                              <li><strong>Funnel Health (30%):</strong> analyzing the drop-off from Click to Purchase.</li>
-                              <li><strong>Consistency (30%):</strong> checking for stability in results over time.</li>
+                              <li>
+                                <strong>Efficiency (40%):</strong> comparing your ROAS/CPA against industry benchmarks.
+                              </li>
+                              <li>
+                                <strong>Funnel Health (30%):</strong> analyzing the drop-off from Click to Purchase.
+                              </li>
+                              <li>
+                                <strong>Consistency (30%):</strong> checking for stability in results over time.
+                              </li>
                             </ul>
                           </div>
                         </TooltipContent>
@@ -375,9 +396,7 @@ const Analysis = () => {
                     </div>
                   ))}
                   {!insights?.needsAttention?.length && (
-                    <p className="text-muted-foreground text-sm text-center py-4">
-                      No campaigns need attention.
-                    </p>
+                    <p className="text-muted-foreground text-sm text-center py-4">No campaigns need attention.</p>
                   )}
                 </div>
               </Card>
@@ -409,25 +428,35 @@ const Analysis = () => {
                   <>
                     {/* Funnel Health */}
                     {insights.deepAnalysis.funnelHealth && (
-                      <Card className={`p-6 border-l-4 ${
-                        insights.deepAnalysis.funnelHealth.status === 'Broken' 
-                          ? 'border-l-destructive' 
-                          : insights.deepAnalysis.funnelHealth.status === 'Warning' 
-                          ? 'border-l-warning' 
-                          : 'border-l-accent'
-                      }`}>
+                      <Card
+                        className={`p-6 border-l-4 ${
+                          insights.deepAnalysis.funnelHealth.status === "Broken"
+                            ? "border-l-destructive"
+                            : insights.deepAnalysis.funnelHealth.status === "Warning"
+                              ? "border-l-warning"
+                              : "border-l-accent"
+                        }`}
+                      >
                         <div className="flex items-start gap-4">
                           <div className="p-2 bg-primary/10 rounded-lg">
-                            <Activity className="h-5 w-5 text-primary"/>
+                            <Activity className="h-5 w-5 text-primary" />
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center justify-between mb-2">
-                              <h3 className="font-semibold text-foreground">{insights.deepAnalysis.funnelHealth.title}</h3>
-                              <Badge variant={insights.deepAnalysis.funnelHealth.status === 'Broken' ? 'destructive' : 'default'}>
+                              <h3 className="font-semibold text-foreground">
+                                {insights.deepAnalysis.funnelHealth.title}
+                              </h3>
+                              <Badge
+                                variant={
+                                  insights.deepAnalysis.funnelHealth.status === "Broken" ? "destructive" : "default"
+                                }
+                              >
                                 {insights.deepAnalysis.funnelHealth.status}
                               </Badge>
                             </div>
-                            <p className="text-sm text-muted-foreground leading-relaxed">{insights.deepAnalysis.funnelHealth.description}</p>
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                              {insights.deepAnalysis.funnelHealth.description}
+                            </p>
                           </div>
                         </div>
                       </Card>
@@ -438,19 +467,25 @@ const Analysis = () => {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t">
                         {insights.segmentAnalysis.demographics && (
                           <Card className="p-5 border-l-4 border-l-purple-500 bg-purple-50/5">
-                            <h4 className="font-semibold text-sm mb-2 flex gap-2"><Users className="h-4 w-4"/> Demographics</h4>
+                            <h4 className="font-semibold text-sm mb-2 flex gap-2">
+                              <Users className="h-4 w-4" /> Demographics
+                            </h4>
                             <p className="text-sm text-foreground">{insights.segmentAnalysis.demographics.finding}</p>
                           </Card>
                         )}
                         {insights.segmentAnalysis.placement && (
                           <Card className="p-5 border-l-4 border-l-blue-500 bg-blue-50/5">
-                            <h4 className="font-semibold text-sm mb-2 flex gap-2"><Smartphone className="h-4 w-4"/> Placement</h4>
+                            <h4 className="font-semibold text-sm mb-2 flex gap-2">
+                              <Smartphone className="h-4 w-4" /> Placement
+                            </h4>
                             <p className="text-sm text-foreground">{insights.segmentAnalysis.placement.finding}</p>
                           </Card>
                         )}
                         {insights.segmentAnalysis.time && (
                           <Card className="p-5 border-l-4 border-l-orange-500 bg-orange-50/5">
-                            <h4 className="font-semibold text-sm mb-2 flex gap-2"><CalendarClock className="h-4 w-4"/> Timing</h4>
+                            <h4 className="font-semibold text-sm mb-2 flex gap-2">
+                              <CalendarClock className="h-4 w-4" /> Timing
+                            </h4>
                             <p className="text-sm text-foreground">{insights.segmentAnalysis.time.finding}</p>
                           </Card>
                         )}
@@ -462,14 +497,16 @@ const Analysis = () => {
                       {/* Opportunities */}
                       <Card className="p-6">
                         <h3 className="font-semibold text-accent flex items-center gap-2 mb-4">
-                          <TrendingUp className="h-5 w-5"/> Profit Opportunities
+                          <TrendingUp className="h-5 w-5" /> Profit Opportunities
                         </h3>
                         <div className="space-y-3">
                           {insights.deepAnalysis.opportunities?.map((item, i) => (
                             <div key={i} className="bg-accent/5 p-3 rounded-lg border border-accent/10">
                               <div className="flex justify-between">
-                                <p className="font-medium text-sm">{item.title}</p> 
-                                <Badge variant="outline" className="text-[10px]">{(item as any).impact || 'High'}</Badge>
+                                <p className="font-medium text-sm">{item.title}</p>
+                                <Badge variant="outline" className="text-[10px]">
+                                  {(item as any).impact || "High"}
+                                </Badge>
                               </div>
                               <p className="text-xs text-muted-foreground">{item.description}</p>
                             </div>
@@ -483,14 +520,16 @@ const Analysis = () => {
                       {/* Money Wasters */}
                       <Card className="p-6">
                         <h3 className="font-semibold text-destructive flex items-center gap-2 mb-4">
-                          <Banknote className="h-5 w-5"/> Budget Leaks
+                          <Banknote className="h-5 w-5" /> Budget Leaks
                         </h3>
                         <div className="space-y-3">
                           {insights.deepAnalysis.moneyWasters?.map((item, i) => (
                             <div key={i} className="bg-destructive/5 p-3 rounded-lg border border-destructive/10">
                               <div className="flex justify-between">
-                                <p className="font-medium text-sm">{item.title}</p> 
-                                <Badge variant="outline" className="text-[10px]">{(item as any).impact || 'Savings'}</Badge>
+                                <p className="font-medium text-sm">{item.title}</p>
+                                <Badge variant="outline" className="text-[10px]">
+                                  {(item as any).impact || "Savings"}
+                                </Badge>
                               </div>
                               <p className="text-xs text-muted-foreground">{item.description}</p>
                             </div>
@@ -522,31 +561,30 @@ const Analysis = () => {
                     title: "Increase retargeting budget by 30%",
                     impact: "High",
                     effort: "Low",
-                    description: "Your retargeting campaigns have the highest ROAS. Reallocate budget from underperforming broad campaigns."
+                    description:
+                      "Your retargeting campaigns have the highest ROAS. Reallocate budget from underperforming broad campaigns.",
                   },
                   {
                     title: "Pause or refresh static image ads",
                     impact: "Medium",
                     effort: "Low",
-                    description: "Static creatives showing ad fatigue. Either create new variations or shift budget to video."
+                    description:
+                      "Static creatives showing ad fatigue. Either create new variations or shift budget to video.",
                   },
                   {
                     title: "Add mobile-specific landing pages",
                     impact: "High",
                     effort: "Medium",
-                    description: "Mobile traffic is strong but could convert better with optimized mobile landing experiences."
+                    description:
+                      "Mobile traffic is strong but could convert better with optimized mobile landing experiences.",
                   },
                 ].map((rec, i) => (
                   <div key={i} className="p-4 rounded-lg border border-border bg-card">
                     <div className="flex items-start justify-between mb-2">
                       <p className="font-medium text-foreground">{rec.title}</p>
                       <div className="flex gap-2">
-                        <Badge className="bg-accent/10 text-accent border-accent/20">
-                          Impact: {rec.impact}
-                        </Badge>
-                        <Badge variant="outline">
-                          Effort: {rec.effort}
-                        </Badge>
+                        <Badge className="bg-accent/10 text-accent border-accent/20">Impact: {rec.impact}</Badge>
+                        <Badge variant="outline">Effort: {rec.effort}</Badge>
                       </div>
                     </div>
                     <p className="text-sm text-muted-foreground">{rec.description}</p>
@@ -556,34 +594,30 @@ const Analysis = () => {
             </Card>
 
             <Card className="p-6">
-              <h3 className="font-display font-semibold text-foreground mb-4">
-                Structural Changes
-              </h3>
+              <h3 className="font-display font-semibold text-foreground mb-4">Structural Changes</h3>
               <div className="space-y-4">
                 {[
                   {
                     title: "Implement audience exclusions to reduce overlap",
                     impact: "High",
                     effort: "Medium",
-                    description: "Prevent your retargeting and prospecting campaigns from competing for the same users."
+                    description:
+                      "Prevent your retargeting and prospecting campaigns from competing for the same users.",
                   },
                   {
                     title: "Create lookalike audiences from best customers",
                     impact: "High",
                     effort: "Medium",
-                    description: "Build 1-2% lookalikes from your highest LTV customers to improve cold acquisition efficiency."
+                    description:
+                      "Build 1-2% lookalikes from your highest LTV customers to improve cold acquisition efficiency.",
                   },
                 ].map((rec, i) => (
                   <div key={i} className="p-4 rounded-lg border border-border bg-card">
                     <div className="flex items-start justify-between mb-2">
                       <p className="font-medium text-foreground">{rec.title}</p>
                       <div className="flex gap-2">
-                        <Badge className="bg-primary/10 text-primary border-primary/20">
-                          Impact: {rec.impact}
-                        </Badge>
-                        <Badge variant="outline">
-                          Effort: {rec.effort}
-                        </Badge>
+                        <Badge className="bg-primary/10 text-primary border-primary/20">Impact: {rec.impact}</Badge>
+                        <Badge variant="outline">Effort: {rec.effort}</Badge>
                       </div>
                     </div>
                     <p className="text-sm text-muted-foreground">{rec.description}</p>
@@ -593,34 +627,29 @@ const Analysis = () => {
             </Card>
 
             <Card className="p-6">
-              <h3 className="font-display font-semibold text-foreground mb-4">
-                Creative Ideas & Tests
-              </h3>
+              <h3 className="font-display font-semibold text-foreground mb-4">Creative Ideas & Tests</h3>
               <div className="space-y-4">
                 {[
                   {
                     title: "Test user-generated content (UGC) style videos",
                     impact: "Medium",
                     effort: "High",
-                    description: "Authentic, UGC-style content often outperforms polished brand content, especially on TikTok and Instagram."
+                    description:
+                      "Authentic, UGC-style content often outperforms polished brand content, especially on TikTok and Instagram.",
                   },
                   {
                     title: "A/B test different video lengths (15s vs 30s vs 60s)",
                     impact: "Medium",
                     effort: "Medium",
-                    description: "Find the optimal video length for your audience and placement mix."
+                    description: "Find the optimal video length for your audience and placement mix.",
                   },
                 ].map((rec, i) => (
                   <div key={i} className="p-4 rounded-lg border border-border bg-card">
                     <div className="flex items-start justify-between mb-2">
                       <p className="font-medium text-foreground">{rec.title}</p>
                       <div className="flex gap-2">
-                        <Badge className="bg-secondary/50 text-foreground">
-                          Impact: {rec.impact}
-                        </Badge>
-                        <Badge variant="outline">
-                          Effort: {rec.effort}
-                        </Badge>
+                        <Badge className="bg-secondary/50 text-foreground">Impact: {rec.impact}</Badge>
+                        <Badge variant="outline">Effort: {rec.effort}</Badge>
                       </div>
                     </div>
                     <p className="text-sm text-muted-foreground">{rec.description}</p>
@@ -635,11 +664,10 @@ const Analysis = () => {
             <Card className="p-6">
               <div className="p-8 text-center">
                 <FileSpreadsheet className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="font-display font-semibold text-foreground mb-2">
-                  Raw Data Viewer
-                </h3>
+                <h3 className="font-display font-semibold text-foreground mb-2">Raw Data Viewer</h3>
                 <p className="text-muted-foreground max-w-md mx-auto">
-                  Detailed row-by-row data will be displayed here in a future update. For now, review the Overview and Insights tabs for your analysis.
+                  Detailed row-by-row data will be displayed here in a future update. For now, review the Overview and
+                  Insights tabs for your analysis.
                 </p>
               </div>
             </Card>
