@@ -84,35 +84,57 @@ serve(async (req) => {
       csvHeaders.forEach((header, idx) => {
         row[header] = values[idx] || ''
       })
-      csvData.push(row)
+      
+      // Filter out total/summary rows
+      const isTotalRow = Object.entries(row).some(([key, value]) => {
+        const keyLower = key.toLowerCase();
+        const valStr = String(value || '').toLowerCase();
+        // Check if this is a name column and contains "total" keywords
+        if (keyLower.includes('name') || keyLower.includes('campaign') || keyLower.includes('ad set') || keyLower.includes('ad name')) {
+          return valStr.includes('total') || valStr.includes('summary') || valStr.includes('grand total') || valStr.includes('account total');
+        }
+        return false;
+      });
+      
+      if (!isTotalRow) {
+        csvData.push(row);
+      }
     }
 
     const openAiKey = Deno.env.get('OPENAI_API_KEY')
     console.log(`Analyzing ${file.name} (${csvData.length} rows)`);
 
-    // --- A. Detect Columns ---
+    // --- A. Detect Columns (excluding "Total" columns) ---
     const headers = Object.keys(csvData[0]).map(h => h.trim());
+    
+    // Filter out columns that are "Total" variants (e.g., "Total Results", "All Results")
+    const isNonTotalColumn = (h: string) => {
+      const lower = h.toLowerCase();
+      return !lower.startsWith('total ') && 
+             !lower.startsWith('all ') && 
+             !lower.startsWith('grand ') &&
+             h.trim() !== ''; // Exclude empty column names
+    };
+    
     const normalizeHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const normalizedHeaders = Object.keys(csvData[0]).map(h => ({
-      original: h,
-      normalized: normalizeHeader(h),
-    }));
+    const normalizedHeaders = Object.keys(csvData[0])
+      .filter(isNonTotalColumn)
+      .map(h => ({
+        original: h,
+        normalized: normalizeHeader(h),
+      }));
 
     const findCol = (regex: RegExp) => normalizedHeaders.find(h => regex.test(h.normalized))?.original;
 
-    // Detect all metric columns
-    let spendCol = findCol(/spend|cost|amount|izterets|terini/) || headers.find(h => h.includes('Amount spent'));
-    let revCol = findCol(/conversionvalue|purchasevalue|ienakumi|pelnja|vertiba/) || headers.find(h => h.includes('conversion value'));
-    let purchCol = findCol(/^purchases$|websitepurchases|offlinepurchases|metapurchases/) || headers.find(h => h.includes('Purchases'));
-    let leadsCol = findCol(/^leads$|websiteleads|offlineleads|metaleads/) || headers.find(h => h.includes('Leads'));
-    let resultsCol = findCol(/^results$/) || headers.find(h => h === 'Results');
-    let impsCol = findCol(/impressions|skatijumi/) || headers.find(h => h.includes('Impressions'));
-    let clicksCol = findCol(/clicksall|clicks|klikski/) || headers.find(h => h.includes('Clicks'));
-    let cpcCol = findCol(/cpcall|costperclick/) || headers.find(h => h.includes('CPC'));
-    let ctrCol = findCol(/ctrall|clickthroughrate/) || headers.find(h => h.includes('CTR'));
-    let cplCol = findCol(/costperlead/) || headers.find(h => h.includes('Cost per Lead'));
-    let cppCol = findCol(/costperpurchase/) || headers.find(h => h.includes('Cost per purchase'));
-    let nameCol = findCol(/adname|adsetname|campaignname|nosaukums/) || headers.find(h => h.includes('name'));
+    // Detect all metric columns (base columns only, no "Total X" variants)
+    let spendCol = findCol(/^spent$|^spend$|^amountspent|^izterets$|^terini$/) || headers.filter(isNonTotalColumn).find(h => h.includes('Amount spent'));
+    let revCol = findCol(/conversionvalue|purchasevalue|^ienakumi$|^pelnja$|^vertiba$/) || headers.filter(isNonTotalColumn).find(h => h.includes('conversion value'));
+    let purchCol = findCol(/^purchases$|^websitepurchases$|^offlinepurchases$|^metapurchases$/) || headers.filter(isNonTotalColumn).find(h => h === 'Purchases' || h === 'Website purchases');
+    let leadsCol = findCol(/^leads$|^websiteleads$|^offlineleads$|^metaleads$/) || headers.filter(isNonTotalColumn).find(h => h === 'Leads' || h === 'Website leads');
+    let resultsCol = findCol(/^results$/) || headers.filter(isNonTotalColumn).find(h => h === 'Results');
+    let impsCol = findCol(/^impressions$|^skatijumi$/) || headers.filter(isNonTotalColumn).find(h => h === 'Impressions');
+    let clicksCol = findCol(/^clicksall$|^clicks$|^klikski$/) || headers.filter(isNonTotalColumn).find(h => h === 'Clicks (all)' || h === 'Clicks');
+    let nameCol = findCol(/adname|adsetname|campaignname|nosaukums/) || headers.filter(isNonTotalColumn).find(h => h.includes('name'));
 
     console.log(`Column Detection: Spend=${spendCol}, Revenue=${revCol}, Purchases=${purchCol}, Leads=${leadsCol}, Results=${resultsCol}`);
 
