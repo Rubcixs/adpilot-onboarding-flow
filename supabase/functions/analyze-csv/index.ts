@@ -90,28 +90,42 @@ serve(async (req) => {
     const openAiKey = Deno.env.get('OPENAI_API_KEY')
     console.log(`Analyzing ${file.name} (${csvData.length} rows)`);
 
-    // --- A. Detect Columns (ULTRA-ROBUST REGEX) ---
-    // Note: The logic searches for key terms in column headers, prioritizing English names which are most common in FB/Google Ads exports.
+    // --- A. Detect Columns (Final, Explicit Mapping + Robust Fallback) ---
+    // Function to normalize headers for robust matching: lowercase, remove non-alphanumeric
     const headers = Object.keys(csvData[0]).map(h => h.trim());
-    
-    const columnTests = {
-      spend: /spend|cost|amount|iztērēts|tēriņi|summa|budžets/i,
-      revenue: /revenue|conversion value|purchase value|ienākumi|peļņa|vērtība/i,
-      purchases: /purchases|results|conversions|actions|pirkumi|rezultāti/i,
-      impressions: /impressions|parādīšanas|tiem|skatījumi/i,
-      clicks: /clicks|klikšķi|saites klikšķi/i,
-      name: /ad name|ad set name|campaign name|nosaukums|kampaņa/i,
-    };
+    const normalizeHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    const spendCol = headers.find(h => columnTests.spend.test(h));
-    const revCol = headers.find(h => columnTests.revenue.test(h));
-    const purchCol = headers.find(h => columnTests.purchases.test(h));
-    const impsCol = headers.find(h => columnTests.impressions.test(h));
-    const clicksCol = headers.find(h => columnTests.clicks.test(h));
-    const nameCol = headers.find(h => columnTests.name.test(h) && !/status|goals|budget/i.test(h)); // Exclude generic matches
+    // Map normalized headers to their original names
+    const normalizedHeaders = Object.keys(csvData[0]).map(h => ({
+      original: h,
+      normalized: normalizeHeader(h),
+    }));
+
+    const findCol = (regex: RegExp) => normalizedHeaders.find(h => regex.test(h.normalized))?.original;
+
+    // Use highly specific detection for core metrics
+    let spendCol = findCol(/spend|cost|amount|izterets|terini/);
+    let revCol = findCol(/conversionvalue|purchasevalue|ienakumi|pelnja|vertiba/);
+    let purchCol = findCol(/purchases|results|conversions|pirkumi|rezultati/);
+    let impsCol = findCol(/impressions|paradiessanas|skatijumi/);
+    let clicksCol = findCol(/clicks|klikski/);
+    let nameCol = findCol(/adname|adsetname|campaignname|nosaukums|kampanja/);
+
+    // CRITICAL: Fallback for known headers from user's Meta export
+    // If the aggressive regex failed, assume the most common known header names (including the currency format)
+    if (!spendCol) spendCol = headers.find(h => h.includes('Amount spent (EUR)'));
+    if (!revCol) revCol = headers.find(h => h.includes('Purchases conversion value'));
+    if (!purchCol) purchCol = headers.find(h => h.includes('Purchases'));
+    if (!nameCol) nameCol = headers.find(h => h.includes('Ad name'));
+    if (!clicksCol) clicksCol = headers.find(h => h.includes('Clicks (all)'));
+    if (!impsCol) impsCol = headers.find(h => h.includes('Impressions'));
+
 
     if (!spendCol || !revCol || !purchCol) {
-        console.error("CRITICAL: One or more main metrics not found. Analysis will be based on 0.");
+        console.error("CRITICAL: Main metrics still not found. Using 0 values.");
+        console.error("DEBUG: Available Headers:", Object.keys(csvData[0]));
+    } else {
+        console.log(`SUCCESS: Found Spend=${spendCol}, Revenue=${revCol}, Purchases=${purchCol}`);
     }
 
     // --- B. Aggregate Data ---
@@ -119,6 +133,7 @@ serve(async (req) => {
     const rowMap = new Map();
 
     for (const row of csvData) {
+      // Use the found column names to extract values and run cleanup
       const spend = spendCol ? toNumber(row[spendCol]) : 0;
       const rev = revCol ? toNumber(row[revCol]) : 0;
       const purch = purchCol ? toNumber(row[purchCol]) : 0;
@@ -141,7 +156,7 @@ serve(async (req) => {
       }
     }
     
-    // Rows calculation (Top/Worst logic remains below this point, using new totals)
+    // Rows calculation (Top/Worst logic remains the same)
     const rows = Array.from(rowMap.entries()).map(([name, d]) => ({
         name,
         spend: round(d.spend),
@@ -149,7 +164,7 @@ serve(async (req) => {
         cpa: d.results > 0 ? round(d.spend / d.results) : 0
     }));
 
-    // --- C. Construct AI Payload (Metrics are now correctly calculated) ---
+    // --- C. Construct AI Payload ---
     const analysisSummary = {
       metrics: {
         spend: round(totalSpend),
